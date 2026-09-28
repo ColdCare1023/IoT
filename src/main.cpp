@@ -5,20 +5,23 @@
  * monitoreo de la cadena de frío de medicamentos termolábiles (Lima).
  * Capa Edge — responsable: Brenda Lucía Gamio Upiachihua.
  *
- * Tarea de captura en el núcleo 1 (el 0 queda para la pila Wi-Fi): cada
- * intervalo lee DS18B20 (interior), SHT31 (temperatura y humedad del
- * ambiente) y MC-38 (puerta), arma un RegistroLectura identificado por
- * boot_id y seq_no y lo guarda SIEMPRE primero en LittleFS (offline-first):
- * la captura nunca espera a la red. El JSON v1.0 se genera al publicar.
+ * Dos tareas FreeRTOS en el núcleo 1 (el 0 queda para la pila Wi-Fi):
+ *
+ *   Captura (prioridad 3) — cada intervalo: DS18B20 + SHT31 + MC-38 →
+ *       registro binario → LittleFS. SIEMPRE se guarda primero (offline-first):
+ *       la captura nunca espera a la red.
+ *   Red     (prioridad 2) — Wi-Fi con backoff exponencial, SNTP y consola
+ *       serie de aprovisionamiento.
  */
 
 #include <Arduino.h>
+#include <WiFi.h>
 #include <esp_system.h>
 
 #include "config.h"
-#include "core/Payload.h"
 #include "core/Registro.h"
 #include "core/Tiempo.h"
+#include "network/WiFiManager.h"
 #include "sensors/DS18B20Sensor.h"
 #include "sensors/MC38Sensor.h"
 #include "sensors/SHT31Sensor.h"
@@ -40,6 +43,7 @@ static SHT31Sensor sht31(SHT31_DIRECCION, PIN_I2C_SDA, PIN_I2C_SCL);
 static MC38Sensor mc38(PIN_MC38);
 #endif
 static BufferLittleFS buffer;
+static WiFiManager wifi;
 
 // =========================================================================
 // Utilidades
@@ -184,6 +188,137 @@ static void taskCaptura(void*) {
 }
 
 // =========================================================================
+// Consola serie (aprovisionamiento sin recompilar y sin secretos en el repo)
+// =========================================================================
+static void imprimirEstado() {
+    const core::EstadoPerdidas p = buffer.perdidas();
+    Serial.printf("\n== ThermoTrace Edge v%d.%d.%d ==\n", FW_MAYOR, FW_MENOR, FW_PARCHE);
+    Serial.printf("device_id=%s boot_id=%lu seq_no=%lu uptime=%lus intervalo=%lus\n",
+                  g_config.deviceId.c_str(), (unsigned long)g_bootId, (unsigned long)g_seqNo,
+                  (unsigned long)uptimeSegundos(), (unsigned long)g_config.intervaloMuestreoS);
+    Serial.printf("wifi=%s rssi=%d dBm intentos_fallidos=%lu retardo=%lums diag=%d\n",
+                  wifi.conectado() ? "OK" : "NO", wifi.rssi(), (unsigned long)wifi.intentosFallidos(),
+                  (unsigned long)wifi.retardoActualMs(), wifi.diagnosticoActivo() ? 1 : 0);
+    Serial.printf("reloj=%s | buffer: pendientes=%lu/%lu ocupacion=%u%% libres=%luKB cuarentena=%lu\n",
+                  relojSincronizado() ? "sntp_synced" : "unsynced", (unsigned long)buffer.pendientes(),
+                  (unsigned long)buffer.capacidad(), (unsigned)buffer.ocupacionPct(),
+                  (unsigned long)(buffer.bytesLibres() / 1024), (unsigned long)buffer.cuarentenados());
+    Serial.printf("perdidas: total=%lu episodio=%lu abierto=%d | heap=%lu (min %lu)\n",
+                  (unsigned long)p.total, (unsigned long)p.episodio, p.episodioAbierto ? 1 : 0,
+                  (unsigned long)ESP.getFreeHeap(), (unsigned long)ESP.getMinFreeHeap());
+}
+
+static void imprimirRssi() {
+    if (!wifi.conectado()) {
+        Serial.println("[C-5] Sin Wi-Fi: no hay RSSI que medir.");
+        return;
+    }
+    long suma = 0;
+    int minimo = 0, maximo = -200;
+    const int n = 10;
+    for (int i = 0; i < n; ++i) {
+        const int v = WiFi.RSSI();
+        suma += v;
+        if (v < minimo) minimo = v;
+        if (v > maximo) maximo = v;
+        alimentarWatchdog();
+        delay(200);
+    }
+    const long promedio = suma / n;
+    Serial.printf("[C-5] SSID=%s canal=%d RSSI promedio=%ld dBm (min %d, max %d, n=%d) -> %s\n",
+                  WiFi.SSID().c_str(), WiFi.channel(), promedio, minimo, maximo, n,
+                  promedio >= -65 ? "CONFORME (>= -65 dBm)" : "NO CONFORME (< -65 dBm)");
+}
+
+static void atenderConsola() {
+    static String linea;
+    while (Serial.available()) {
+        const char c = (char)Serial.read();
+        if (c == '\r') continue;
+        if (c != '\n') {
+            if (linea.length() < 200) linea += c;
+            continue;
+        }
+        String cmd = linea;
+        linea = "";
+        cmd.trim();
+        if (cmd.isEmpty()) continue;
+
+        const int e1 = cmd.indexOf(' ');
+        const String verbo = e1 < 0 ? cmd : cmd.substring(0, e1);
+        String resto = e1 < 0 ? String() : cmd.substring(e1 + 1);
+        resto.trim();
+
+        if (verbo == "ayuda" || verbo == "help") {
+            Serial.println("Comandos: estado | rssi | nvs set <clave> <valor> | nvs borrar <clave> | reiniciar");
+            Serial.println("Claves NVS: wifi_ssid wifi_pass mqtt_host mqtt_token intervalo_s");
+        } else if (verbo == "estado") {
+            imprimirEstado();
+        } else if (verbo == "rssi") {
+            imprimirRssi();
+        } else if (verbo == "reiniciar") {
+            Serial.println("Reiniciando...");
+            delay(200);
+            ESP.restart();
+        } else if (verbo == "nvs") {
+            const int e2 = resto.indexOf(' ');
+            const String accion = e2 < 0 ? resto : resto.substring(0, e2);
+            String args = e2 < 0 ? String() : resto.substring(e2 + 1);
+            args.trim();
+            if (accion == "set") {
+                const int e3 = args.indexOf(' ');
+                const String clave = e3 < 0 ? args : args.substring(0, e3);
+                const String valor = e3 < 0 ? String() : args.substring(e3 + 1);
+                const bool ok = guardarClaveNvs(clave, valor);
+                // Nunca se hace eco del valor: el monitor serie acaba en anexos.
+                Serial.printf("nvs set %s -> %s (valor no mostrado). Reiniciar para aplicar.\n",
+                              clave.c_str(), ok ? "OK" : "RECHAZADO");
+            } else if (accion == "borrar") {
+                Serial.printf("nvs borrar %s -> %s\n", args.c_str(), borrarClaveNvs(args) ? "OK" : "RECHAZADO");
+            } else {
+                Serial.println("Uso: nvs set <clave> <valor> | nvs borrar <clave>");
+            }
+        } else {
+            Serial.printf("Comando desconocido: '%s' (escribir 'ayuda').\n", verbo.c_str());
+        }
+    }
+}
+
+// =========================================================================
+// Red
+// =========================================================================
+static void taskRed(void*) {
+    suscribirTareaAlWatchdog("Red");
+    wifi.configurar(g_config.wifiSsid, g_config.wifiPassword);
+    wifi.begin();
+
+    for (;;) {
+        alimentarWatchdog();
+        atenderConsola();
+
+        uint32_t epochSync = 0;
+        if (consumirAvisoSincronizacion(epochSync)) {
+            LOG_I("Reloj", "SNTP sincronizado: %s", core::formatearISO8601(epochSync).c_str());
+        }
+
+        // HU-08: backoff exponencial 1 s → 60 s; la captura sigue en la
+        // otra tarea aunque la red no vuelva nunca.
+        if (!wifi.mantener()) {
+            delay(200);
+            continue;
+        }
+        arrancarSNTP();
+
+        WiFiManager::Recuperacion rec;
+        if (wifi.consumirRecuperacion(rec)) {
+            LOG_I("WiFi", "Reconectado tras episodio de diagnostico: %lu intentos, %lu s sin red.",
+                  (unsigned long)rec.intentos, (unsigned long)rec.duracionS);
+        }
+        delay(50);
+    }
+}
+
+// =========================================================================
 // Arranque
 // =========================================================================
 void setup() {
@@ -197,9 +332,11 @@ void setup() {
     iniciarReloj(g_bootId);
 
     // Línea fija de arranque: la usa analizar_ensayo.py para contar reinicios.
-    Serial.printf("[BOOT] boot_id=%lu reset=%s fw=v%d.%d.%d device=%s intervalo_s=%lu mc38=%d\n",
+    Serial.printf("[BOOT] boot_id=%lu reset=%s fw=v%d.%d.%d device=%s intervalo_s=%lu mc38=%d "
+                  "credenciales=%s\n",
                   (unsigned long)g_bootId, nombreReinicio(motivo), FW_MAYOR, FW_MENOR, FW_PARCHE,
-                  g_config.deviceId.c_str(), (unsigned long)g_config.intervaloMuestreoS, MC38_INSTALADO);
+                  g_config.deviceId.c_str(), (unsigned long)g_config.intervaloMuestreoS,
+                  MC38_INSTALADO, g_config.origen.c_str());
 
     bool formateado = false;
     core::InformeMontaje informe;
@@ -216,6 +353,7 @@ void setup() {
 #endif
 
     xTaskCreatePinnedToCore(taskCaptura, "Captura", 8192, nullptr, 3, nullptr, 1);
+    xTaskCreatePinnedToCore(taskRed, "Red", 16384, nullptr, 2, nullptr, 1);
 }
 
 void loop() {

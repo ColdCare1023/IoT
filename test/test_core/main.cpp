@@ -13,8 +13,9 @@ void run_tests_sensores(void);
 void run_tests_tiempo(void);
 void run_tests_contrato(void);
 void run_tests_cola(void);
-void run_tests_credenciales(void);
 void run_tests_antirrebote(void);
+void run_tests_backoff(void);
+void run_tests_credenciales(void);
 
 int main(int, char**) {
     UNITY_BEGIN();
@@ -22,7 +23,8 @@ int main(int, char**) {
     run_tests_tiempo();
     run_tests_contrato();
     run_tests_cola();
-    run_tests_credenciales();
     run_tests_antirrebote();
+    run_tests_backoff();
+    run_tests_credenciales();
     return UNITY_END();
 }
