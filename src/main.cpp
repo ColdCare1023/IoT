@@ -42,6 +42,7 @@
 #include "storage/BufferLittleFS.h"
 #include "system/Configuracion.h"
 #include "system/Eventos.h"
+#include "system/PowerBackup.h"
 #include "system/Reloj.h"
 #include "system/Watchdog.h"
 
@@ -130,6 +131,12 @@ static core::RegistroLectura capturar() {
     mc38.cerrarVentana();
 #endif
 
+    // HU-52: con sensado instalado cada lectura registra si se capturó con red
+    // comercial o con el Mini UPS (evidencia persistida aunque no haya red).
+    if (energiaSensada()) {
+        r.poner(core::BANDERA_SENSADO_ENERGIA, true);
+        r.poner(core::BANDERA_EN_RESPALDO, enRespaldo());
+    }
     r.fwMayor = FW_MAYOR;
     r.fwMenor = FW_MENOR;
     r.fwParche = FW_PARCHE;
@@ -151,10 +158,14 @@ static void imprimirCaptura(const core::RegistroLectura& r, core::ResultadoGuard
     const std::string t = r.tiene(core::BANDERA_TIEMPO_SNTP) ? core::formatearISO8601(r.capturadoEpoch)
                                                              : std::string("-");
     Serial.printf("[CAP] boot=%lu seq=%lu up=%lu t=%s tq=%s ds=%s ds_f=%s sht=%s hr=%s sht_f=%s "
-                  "door=%s door_s=%u g=%s q=%lu ocup=%u heap=%lu\n",
+                  "door=%s door_s=%u pwr=%s g=%s q=%lu ocup=%u heap=%lu\n",
                   (unsigned long)r.bootId, (unsigned long)r.seqNo, (unsigned long)r.uptimeS, t.c_str(),
                   r.tiene(core::BANDERA_TIEMPO_SNTP) ? "sntp" : "nosync", ds, dsF ? dsF : "-", sht,
-                  hr, shF ? shF : "-", puerta, (unsigned)r.puertaAbiertaS, textoGuardado(g),
+                  hr, shF ? shF : "-", puerta, (unsigned)r.puertaAbiertaS,
+                  r.tiene(core::BANDERA_SENSADO_ENERGIA)
+                      ? (r.tiene(core::BANDERA_EN_RESPALDO) ? "backup" : "mains")
+                      : "NA",
+                  textoGuardado(g),
                   (unsigned long)buffer.pendientes(), (unsigned)buffer.ocupacionPct(),
                   (unsigned long)ESP.getFreeHeap());
 }
@@ -173,7 +184,7 @@ static void taskCaptura(void*) {
         }
         imprimirCaptura(r, g);
 
-        // Espera hasta el próximo ciclo muestreando la puerta cada 50 ms.
+        // Espera hasta el próximo ciclo muestreando puerta y energía cada 50 ms.
         const TickType_t intervalo = pdMS_TO_TICKS(g_config.intervaloMuestreoS * 1000UL);
         for (;;) {
             const int32_t faltan = (int32_t)(ultimo + intervalo - xTaskGetTickCount());
@@ -182,6 +193,7 @@ static void taskCaptura(void*) {
 #if MC38_INSTALADO
             mc38.poll();  // antirrebote de 50 ms: requiere muestras frecuentes
 #endif
+            muestrearEnergia();  // conmutación a respaldo con timestamp (HU-52 esc. 1)
             alimentarWatchdog();
         }
         vTaskDelayUntil(&ultimo, intervalo);
@@ -205,8 +217,9 @@ static void imprimirEstado() {
                   relojSincronizado() ? "sntp_synced" : "unsynced", (unsigned long)buffer.pendientes(),
                   (unsigned long)buffer.capacidad(), (unsigned)buffer.ocupacionPct(),
                   (unsigned long)(buffer.bytesLibres() / 1024), (unsigned long)buffer.cuarentenados());
-    Serial.printf("perdidas: total=%lu episodio=%lu abierto=%d | heap=%lu (min %lu)\n",
+    Serial.printf("perdidas: total=%lu episodio=%lu abierto=%d | energia=%s | heap=%lu (min %lu)\n",
                   (unsigned long)p.total, (unsigned long)p.episodio, p.episodioAbierto ? 1 : 0,
+                  energiaSensada() ? (enRespaldo() ? "RESPALDO" : "red") : "sin_sensado",
                   (unsigned long)ESP.getFreeHeap(), (unsigned long)ESP.getMinFreeHeap());
 }
 
@@ -507,10 +520,10 @@ void setup() {
 
     // Línea fija de arranque: la usa analizar_ensayo.py para contar reinicios.
     Serial.printf("[BOOT] boot_id=%lu reset=%s fw=v%d.%d.%d device=%s intervalo_s=%lu mc38=%d "
-                  "credenciales=%s\n",
+                  "sensado_energia=%d credenciales=%s\n",
                   (unsigned long)g_bootId, nombreReinicio(motivo), FW_MAYOR, FW_MENOR, FW_PARCHE,
                   g_config.deviceId.c_str(), (unsigned long)g_config.intervaloMuestreoS,
-                  MC38_INSTALADO, g_config.origen.c_str());
+                  MC38_INSTALADO, SENSADO_ENERGIA_INSTALADO, g_config.origen.c_str());
 
     bool formateado = false;
     core::InformeMontaje informe;
@@ -526,6 +539,7 @@ void setup() {
                        "Ver 'ayuda' en esta consola.");
     }
 
+    iniciarEnergia();
     ds18b20.begin();
     sht31.begin();
 #if MC38_INSTALADO
@@ -538,6 +552,7 @@ void setup() {
         d.cadena("firmware_version", core::textoVersionFirmware(FW_MAYOR, FW_MENOR, FW_PARCHE));
         d.sinSigno("intervalo_s", g_config.intervaloMuestreoS);
         d.booleano("mc38_instalado", MC38_INSTALADO != 0);
+        d.booleano("sensado_energia", SENSADO_ENERGIA_INSTALADO != 0);
         d.booleano("fs_formateado", formateado);
         d.sinSigno("pendientes_recuperados", informe.pendientes);
         d.sinSigno("segmentos_con_cola_parcial", informe.segmentosConColaParcial);
