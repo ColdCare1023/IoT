@@ -10,17 +10,19 @@
  *   Captura (prioridad 3) — cada intervalo: DS18B20 + SHT31 + MC-38 →
  *       registro binario → LittleFS. SIEMPRE se guarda primero (offline-first):
  *       la captura nunca espera a la red.
- *   Red     (prioridad 2) — Wi-Fi con backoff exponencial, SNTP y consola
- *       serie de aprovisionamiento.
+ *   Red     (prioridad 2) — Wi-Fi con backoff exponencial, SNTP, canal
+ *       MQTT/TLS hacia EMQX Cloud (solo 8883, CA validada) y consola serie.
  */
 
 #include <Arduino.h>
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 #include <esp_system.h>
 
 #include "config.h"
 #include "core/Registro.h"
 #include "core/Tiempo.h"
+#include "network/MQTTManager.h"
 #include "network/WiFiManager.h"
 #include "sensors/DS18B20Sensor.h"
 #include "sensors/MC38Sensor.h"
@@ -43,7 +45,9 @@ static SHT31Sensor sht31(SHT31_DIRECCION, PIN_I2C_SDA, PIN_I2C_SCL);
 static MC38Sensor mc38(PIN_MC38);
 #endif
 static BufferLittleFS buffer;
+static WiFiClientSecure tls;
 static WiFiManager wifi;
+static MQTTManager mqtt(tls);
 
 // =========================================================================
 // Utilidades
@@ -196,9 +200,10 @@ static void imprimirEstado() {
     Serial.printf("device_id=%s boot_id=%lu seq_no=%lu uptime=%lus intervalo=%lus\n",
                   g_config.deviceId.c_str(), (unsigned long)g_bootId, (unsigned long)g_seqNo,
                   (unsigned long)uptimeSegundos(), (unsigned long)g_config.intervaloMuestreoS);
-    Serial.printf("wifi=%s rssi=%d dBm intentos_fallidos=%lu retardo=%lums diag=%d\n",
+    Serial.printf("wifi=%s rssi=%d dBm intentos_fallidos=%lu retardo=%lums diag=%d | mqtt=%s ca=%d aprov=%d\n",
                   wifi.conectado() ? "OK" : "NO", wifi.rssi(), (unsigned long)wifi.intentosFallidos(),
-                  (unsigned long)wifi.retardoActualMs(), wifi.diagnosticoActivo() ? 1 : 0);
+                  (unsigned long)wifi.retardoActualMs(), wifi.diagnosticoActivo() ? 1 : 0,
+                  mqtt.conectado() ? "OK" : "NO", mqtt.caCargada() ? 1 : 0, mqtt.aprovisionado() ? 1 : 0);
     Serial.printf("reloj=%s | buffer: pendientes=%lu/%lu ocupacion=%u%% libres=%luKB cuarentena=%lu\n",
                   relojSincronizado() ? "sntp_synced" : "unsynced", (unsigned long)buffer.pendientes(),
                   (unsigned long)buffer.capacidad(), (unsigned)buffer.ocupacionPct(),
@@ -314,6 +319,18 @@ static void taskRed(void*) {
             LOG_I("WiFi", "Reconectado tras episodio de diagnostico: %lu intentos, %lu s sin red.",
                   (unsigned long)rec.intentos, (unsigned long)rec.duracionS);
         }
+
+        // HU-09: canal MQTT sobre TLS con la CA validada. Sin CA o sin
+        // credenciales, fallo cerrado: no hay alternativa en texto plano.
+        if (!mqtt.conectado()) {
+            const bool ok = mqtt.conectar();
+            alimentarWatchdog();  // handshake TLS + CONNACK: el tramo más largo
+            if (!ok) {
+                delay(500);
+                continue;
+            }
+        }
+        mqtt.loop();
         delay(50);
     }
 }
@@ -344,6 +361,12 @@ void setup() {
         LOG_E("Setup", "LittleFS inutilizable: cada lectura se contara como perdida.");
     } else if (formateado) {
         LOG_E("Setup", "LittleFS no montaba y se formateo: buffer vacio.");
+    }
+
+    mqtt.configurar(g_config.mqttHost, g_config.deviceId, g_config.mqttToken);
+    if (!g_config.credencialesCompletas()) {
+        LOG_E("Setup", "Nodo SIN aprovisionar: captura y guarda en LittleFS, pero no publica. "
+                       "Ver 'ayuda' en esta consola.");
     }
 
     ds18b20.begin();
