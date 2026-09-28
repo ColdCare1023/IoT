@@ -6,17 +6,17 @@
  * Capa Edge — responsable: Brenda Lucía Gamio Upiachihua.
  *
  * Tarea de captura en el núcleo 1 (el 0 queda para la pila Wi-Fi): cada
- * intervalo lee la sonda DS18B20 (interior) y el SHT31 (temperatura y humedad
- * del ambiente) y registra
- * la lectura identificada por boot_id y seq_no, con su hora UTC solo si es
- * confiable. Una falla del SHT31 nunca invalida la lectura del DS18B20.
+ * intervalo lee DS18B20 (interior), SHT31 (temperatura y humedad del
+ * ambiente) y MC-38 (puerta), arma un RegistroLectura identificado por
+ * boot_id y seq_no y lo estructura con el contrato de telemetría v1.0.
  */
 
 #include <Arduino.h>
 #include <esp_system.h>
 
 #include "config.h"
-#include "core/Sensores.h"
+#include "core/Payload.h"
+#include "core/Registro.h"
 #include "core/Tiempo.h"
 #include "sensors/DS18B20Sensor.h"
 #include "sensors/MC38Sensor.h"
@@ -57,43 +57,71 @@ static const char* nombreReinicio(esp_reset_reason_t r) {
     }
 }
 
-static void textoLectura(char* buf, size_t n, const core::LecturaSensor& l) {
-    if (l.valida()) snprintf(buf, n, "%.2f", (double)l.valor);
-    else            snprintf(buf, n, "NULL");
+static void textoCentesimas(char* buf, size_t n, int32_t c, bool nulo) {
+    if (nulo) {
+        snprintf(buf, n, "NULL");
+        return;
+    }
+    const int32_t a = c < 0 ? -c : c;
+    snprintf(buf, n, "%s%ld.%02ld", c < 0 ? "-" : "", (long)(a / 100), (long)(a % 100));
 }
 
 // =========================================================================
 // Captura
 // =========================================================================
+static core::RegistroLectura capturar() {
+    core::RegistroLectura r;
+    r.bootId = g_bootId;
+    r.seqNo = ++g_seqNo;
+    r.uptimeS = uptimeSegundos();
+    const uint32_t epoch = epochAhora();  // 0 si no hay SNTP: no se inventa la hora
+    if (epoch != 0) {
+        r.capturadoEpoch = epoch;
+        r.poner(core::BANDERA_TIEMPO_SNTP, true);
+    }
+
+    // Nunca un código de error como valor: una falla sale como
+    // SENSOR_FAULT con su motivo (HU-01 esc. 2 y 3).
+    core::fijarDS18B20(r, ds18b20.leer());
+    alimentarWatchdog();
+    core::fijarSHT31(r, sht31.leer());  // independiente del DS18B20
+
+#if MC38_INSTALADO
+    r.poner(core::BANDERA_MC38_INSTALADO, true);
+    r.poner(core::BANDERA_PUERTA_ABIERTA, mc38.huboApertura());
+    const uint32_t abiertaS = mc38.segundosAbiertaEnVentana();
+    const uint32_t rachaS = mc38.rachaSegundos();
+    r.puertaAbiertaS = (uint16_t)(abiertaS > 65535u ? 65535u : abiertaS);
+    r.puertaRachaS = rachaS >= UMBRAL_PUERTA_PROLONGADA_S ? (uint16_t)(rachaS > 65535u ? 65535u : rachaS) : 0;
+    mc38.cerrarVentana();
+#endif
+
+    r.fwMayor = FW_MAYOR;
+    r.fwMenor = FW_MENOR;
+    r.fwParche = FW_PARCHE;
+    return r;
+}
 
 /// Línea fija por captura. La consumen los scripts de QA (ensayo doméstico
 /// de 2–3 h): no cambiar el formato sin actualizar analizar_ensayo.py.
-/// Estado de la puerta en la ventana de reporte (HU-04).
-struct VentanaPuerta {
-    bool instalado = false;
-    bool huboApertura = false;
-    uint32_t abiertaS = 0;
-    uint32_t rachaS = 0;  ///< solo si supera UMBRAL_PUERTA_PROLONGADA_S
-};
-
-static void imprimirCaptura(uint32_t seq, uint32_t uptimeS, uint32_t epoch,
-                            const core::LecturaSensor& ds, const core::LecturaSHT31& sht,
-                            const VentanaPuerta& puerta) {
-    char dsTxt[16], shtTxt[16], hrTxt[16];
-    textoLectura(dsTxt, sizeof(dsTxt), ds);
-    textoLectura(shtTxt, sizeof(shtTxt), sht.temperatura);
-    textoLectura(hrTxt, sizeof(hrTxt), sht.humedad);
-    const char* dsF = core::codigoFallo(ds.fallo);
-    const char* shF = core::codigoFallo(!sht.temperatura.valida() ? sht.temperatura.fallo
-                                                                   : sht.humedad.fallo);
-    const std::string t = epoch != 0 ? core::formatearISO8601(epoch) : std::string("-");
-    const char* door = puerta.instalado ? (puerta.huboApertura ? "1" : "0") : "NA";
+static void imprimirCaptura(const core::RegistroLectura& r) {
+    char ds[16], sht[16], hr[16];
+    textoCentesimas(ds, sizeof(ds), r.tempDsCenti, r.falloDs != core::FalloSensor::Ninguno);
+    textoCentesimas(sht, sizeof(sht), r.tempShtCenti, r.falloShtT != core::FalloSensor::Ninguno);
+    textoCentesimas(hr, sizeof(hr), r.humShtCenti, r.falloShtH != core::FalloSensor::Ninguno);
+    const char* dsF = core::codigoFallo(r.falloDs);
+    const char* shF = core::codigoFallo(r.falloShtT != core::FalloSensor::Ninguno ? r.falloShtT : r.falloShtH);
+    const char* puerta = r.tiene(core::BANDERA_MC38_INSTALADO)
+                             ? (r.tiene(core::BANDERA_PUERTA_ABIERTA) ? "1" : "0")
+                             : "NA";
+    const std::string t = r.tiene(core::BANDERA_TIEMPO_SNTP) ? core::formatearISO8601(r.capturadoEpoch)
+                                                             : std::string("-");
     Serial.printf("[CAP] boot=%lu seq=%lu up=%lu t=%s tq=%s ds=%s ds_f=%s sht=%s hr=%s sht_f=%s "
-                  "door=%s door_s=%lu door_streak=%lu heap=%lu\n",
-                  (unsigned long)g_bootId, (unsigned long)seq, (unsigned long)uptimeS, t.c_str(),
-                  epoch != 0 ? "sntp" : "nosync", dsTxt, dsF ? dsF : "-", shtTxt, hrTxt,
-                  shF ? shF : "-", door, (unsigned long)puerta.abiertaS,
-                  (unsigned long)puerta.rachaS, (unsigned long)ESP.getFreeHeap());
+                  "door=%s door_s=%u heap=%lu\n",
+                  (unsigned long)r.bootId, (unsigned long)r.seqNo, (unsigned long)r.uptimeS, t.c_str(),
+                  r.tiene(core::BANDERA_TIEMPO_SNTP) ? "sntp" : "nosync", ds, dsF ? dsF : "-", sht,
+                  hr, shF ? shF : "-", puerta, (unsigned)r.puertaAbiertaS,
+                  (unsigned long)ESP.getFreeHeap());
 }
 
 static void taskCaptura(void*) {
@@ -102,28 +130,23 @@ static void taskCaptura(void*) {
     const TickType_t paso = pdMS_TO_TICKS(MC38_POLL_MS);
 
     for (;;) {
-        const uint32_t seq = ++g_seqNo;
-        const uint32_t uptime = uptimeSegundos();
-        const uint32_t epoch = epochAhora();  // 0 si no hay SNTP: no se inventa la hora
-        // Nunca un código de error como valor: una falla sale como
-        // SENSOR_FAULT con su motivo (HU-01 esc. 2 y 3).
-        const core::LecturaSensor ds = ds18b20.leer();
-        alimentarWatchdog();
-        const core::LecturaSHT31 sht = sht31.leer();  // independiente del DS18B20
+        const core::RegistroLectura r = capturar();
+        imprimirCaptura(r);
 
-        // HU-04: sin MC-38 instalado no se muestrea nada (un pin sin sensor
-        // flota en HIGH = "abierta"): door_open se reporta como no aplicable.
-        VentanaPuerta puerta;
-#if MC38_INSTALADO
-        puerta.instalado = true;
-        puerta.huboApertura = mc38.huboApertura();
-        puerta.abiertaS = mc38.segundosAbiertaEnVentana();
-        const uint32_t racha = mc38.rachaSegundos();
-        puerta.rachaS = racha >= UMBRAL_PUERTA_PROLONGADA_S ? racha : 0;
-        mc38.cerrarVentana();
-#endif
-        imprimirCaptura(seq, uptime, epoch, ds, sht, puerta);
+        // HU-05: contrato v1.0. Si el registro no cumple el esquema o el
+        // JSON excede el límite, no se genera una estructura inválida.
+        const std::string json =
+            core::serializarTelemetria(r, std::string(g_config.deviceId.c_str()), baseTiempo());
+        if (json.empty()) {
+            std::string motivo;
+            core::validarRegistro(r, motivo);
+            LOG_E("Payload", "seq=%lu no cumple el contrato v1.0 (%s): no se genera.",
+                  (unsigned long)r.seqNo, motivo.c_str());
+        } else {
+            LOG_I("Payload", "%s", json.c_str());
+        }
 
+        // Espera hasta el próximo ciclo muestreando la puerta cada 50 ms.
         const TickType_t intervalo = pdMS_TO_TICKS(g_config.intervaloMuestreoS * 1000UL);
         for (;;) {
             const int32_t faltan = (int32_t)(ultimo + intervalo - xTaskGetTickCount());
@@ -152,9 +175,9 @@ void setup() {
     iniciarReloj(g_bootId);
 
     // Línea fija de arranque: la usa analizar_ensayo.py para contar reinicios.
-    Serial.printf("[BOOT] boot_id=%lu reset=%s fw=v%d.%d.%d device=%s intervalo_s=%lu\n",
+    Serial.printf("[BOOT] boot_id=%lu reset=%s fw=v%d.%d.%d device=%s intervalo_s=%lu mc38=%d\n",
                   (unsigned long)g_bootId, nombreReinicio(motivo), FW_MAYOR, FW_MENOR, FW_PARCHE,
-                  g_config.deviceId.c_str(), (unsigned long)g_config.intervaloMuestreoS);
+                  g_config.deviceId.c_str(), (unsigned long)g_config.intervaloMuestreoS, MC38_INSTALADO);
 
     ds18b20.begin();
     sht31.begin();
