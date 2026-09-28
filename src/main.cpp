@@ -6,7 +6,8 @@
  * Capa Edge — responsable: Brenda Lucía Gamio Upiachihua.
  *
  * Tarea de captura en el núcleo 1 (el 0 queda para la pila Wi-Fi): cada
- * intervalo lee la sonda DS18B20 (interior) y el SHT31 (ambiente) y registra
+ * intervalo lee la sonda DS18B20 (interior) y el SHT31 (temperatura y humedad
+ * del ambiente) y registra
  * la lectura identificada por boot_id y seq_no, con su hora UTC solo si es
  * confiable. Una falla del SHT31 nunca invalida la lectura del DS18B20.
  */
@@ -65,16 +66,19 @@ static void textoLectura(char* buf, size_t n, const core::LecturaSensor& l) {
 /// de 2–3 h): no cambiar el formato sin actualizar analizar_ensayo.py.
 static void imprimirCaptura(uint32_t seq, uint32_t uptimeS, uint32_t epoch,
                             const core::LecturaSensor& ds, const core::LecturaSHT31& sht) {
-    char dsTxt[16], shtTxt[16];
+    char dsTxt[16], shtTxt[16], hrTxt[16];
     textoLectura(dsTxt, sizeof(dsTxt), ds);
     textoLectura(shtTxt, sizeof(shtTxt), sht.temperatura);
+    textoLectura(hrTxt, sizeof(hrTxt), sht.humedad);
     const char* dsF = core::codigoFallo(ds.fallo);
-    const char* shF = core::codigoFallo(sht.temperatura.fallo);
+    const char* shF = core::codigoFallo(!sht.temperatura.valida() ? sht.temperatura.fallo
+                                                                   : sht.humedad.fallo);
     const std::string t = epoch != 0 ? core::formatearISO8601(epoch) : std::string("-");
-    Serial.printf("[CAP] boot=%lu seq=%lu up=%lu t=%s tq=%s ds=%s ds_f=%s sht=%s sht_f=%s heap=%lu\n",
+    Serial.printf("[CAP] boot=%lu seq=%lu up=%lu t=%s tq=%s ds=%s ds_f=%s sht=%s hr=%s sht_f=%s "
+                  "heap=%lu\n",
                   (unsigned long)g_bootId, (unsigned long)seq, (unsigned long)uptimeS, t.c_str(),
-                  epoch != 0 ? "sntp" : "nosync", dsTxt, dsF ? dsF : "-", shtTxt, shF ? shF : "-",
-                  (unsigned long)ESP.getFreeHeap());
+                  epoch != 0 ? "sntp" : "nosync", dsTxt, dsF ? dsF : "-", shtTxt, hrTxt,
+                  shF ? shF : "-", (unsigned long)ESP.getFreeHeap());
 }
 
 static void taskCaptura(void*) {

@@ -85,12 +85,24 @@ LecturaSHT31 decodificarSHT31(const uint8_t trama[6]) {
                             : LecturaSensor::ok(t);
     }
 
+    if (crc8Sensirion(&trama[3], 2) != trama[5]) {
+        r.humedad = LecturaSensor::falla(FalloSensor::ErrorCrc);
+    } else {
+        const uint16_t srh = (uint16_t)(((uint16_t)trama[3] << 8) | trama[4]);
+        const float hr = 100.0f * (float)srh / 65535.0f;
+        // Por construcción 0 ≤ hr ≤ 100; la comprobación se deja explícita
+        // porque es el criterio de HU-03 escenario 3.
+        r.humedad = (hr < SHT31_HR_MIN || hr > SHT31_HR_MAX)
+                        ? LecturaSensor::falla(FalloSensor::Implausible)
+                        : LecturaSensor::ok(hr);
+    }
     return r;
 }
 
 LecturaSHT31 falloSHT31(FalloSensor fallo) {
     LecturaSHT31 r;
     r.temperatura = LecturaSensor::falla(fallo);
+    r.humedad = LecturaSensor::falla(fallo);
     return r;
 }
 

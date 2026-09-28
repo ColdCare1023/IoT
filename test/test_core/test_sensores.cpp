@@ -1,5 +1,5 @@
 /**
- * Decodificación y CRC de DS18B20 / SHT31 (HU-01, HU-02).
+ * Decodificación y CRC de DS18B20 / SHT31 (HU-01, HU-02, HU-03).
  *
  * Lo que se fija aquí: ningún código de error ni trama corrupta puede salir
  * como temperatura. Es la condición para que el backend jamás calcule una
@@ -124,19 +124,22 @@ void test_ds18b20_resolucion_9_bits_enmascara_bits_indefinidos(void) {
 
 void test_sht31_trama_valida(void) {
     uint8_t t[6];
-    tramaSht(t, 0x6666, 0x8000);  // ≈25,00 °C
+    tramaSht(t, 0x6666, 0x8000);  // ≈25,00 °C y ≈50,00 %HR
     const core::LecturaSHT31 l = core::decodificarSHT31(t);
     TEST_ASSERT_TRUE(l.temperatura.valida());
+    TEST_ASSERT_TRUE(l.humedad.valida());
     TEST_ASSERT_FLOAT_WITHIN(0.01f, 25.0f, l.temperatura.valor);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 50.0f, l.humedad.valor);
 }
 
-void test_sht31_crc_de_temperatura_es_sensor_fault(void) {
+void test_sht31_crc_de_una_palabra_solo_invalida_esa_magnitud(void) {
     uint8_t t[6];
     tramaSht(t, 0x6666, 0x8000);
-    t[1] ^= 0x10;
+    t[4] ^= 0x10;  // corrompe solo la humedad
     const core::LecturaSHT31 l = core::decodificarSHT31(t);
-    TEST_ASSERT_FALSE(l.temperatura.valida());
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)FalloSensor::ErrorCrc, (uint8_t)l.temperatura.fallo);
+    TEST_ASSERT_TRUE(l.temperatura.valida());
+    TEST_ASSERT_FALSE(l.humedad.valida());
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)FalloSensor::ErrorCrc, (uint8_t)l.humedad.fallo);
 }
 
 void test_sht31_temperatura_bajo_el_minimo_es_implausible(void) {
@@ -144,6 +147,15 @@ void test_sht31_temperatura_bajo_el_minimo_es_implausible(void) {
     tramaSht(t, 0x0000, 0x8000);  // −45 °C < −40 °C del rango del sensor
     const core::LecturaSHT31 l = core::decodificarSHT31(t);
     TEST_ASSERT_EQUAL_UINT8((uint8_t)FalloSensor::Implausible, (uint8_t)l.temperatura.fallo);
+    TEST_ASSERT_TRUE(l.humedad.valida());
+}
+
+void test_sht31_humedad_extremos_validos(void) {
+    uint8_t t[6];
+    tramaSht(t, 0x6666, 0x0000);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, core::decodificarSHT31(t).humedad.valor);
+    tramaSht(t, 0x6666, 0xFFFF);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 100.0f, core::decodificarSHT31(t).humedad.valor);
 }
 
 void test_codigos_de_fallo_estables(void) {
@@ -166,7 +178,8 @@ void run_tests_sensores(void) {
     RUN_TEST(test_ds18b20_fuera_de_rango_fisico_es_implausible);
     RUN_TEST(test_ds18b20_resolucion_9_bits_enmascara_bits_indefinidos);
     RUN_TEST(test_sht31_trama_valida);
-    RUN_TEST(test_sht31_crc_de_temperatura_es_sensor_fault);
+    RUN_TEST(test_sht31_crc_de_una_palabra_solo_invalida_esa_magnitud);
     RUN_TEST(test_sht31_temperatura_bajo_el_minimo_es_implausible);
+    RUN_TEST(test_sht31_humedad_extremos_validos);
     RUN_TEST(test_codigos_de_fallo_estables);
 }

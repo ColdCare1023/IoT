@@ -61,11 +61,15 @@ core::LecturaSHT31 SHT31Sensor::leer() {
         ultimo = core::decodificarSHT31(trama);
         // Un CRC malo suele ser ruido transitorio del cable: se reintenta.
         // Implausible no: repetir la medición no lo arregla.
-        if (ultimo.temperatura.fallo == core::FalloSensor::ErrorCrc) continue;
+        if (ultimo.temperatura.fallo == core::FalloSensor::ErrorCrc ||
+            ultimo.humedad.fallo == core::FalloSensor::ErrorCrc) {
+            continue;
+        }
         return ultimo;
     }
 
-    LOG_E("SHT31", "SENSOR_FAULT tras %d intentos: %s", SHT31_REINTENTOS,
-          core::codigoFallo(ultimo.temperatura.fallo));
+    LOG_E("SHT31", "SENSOR_FAULT tras %d intentos: T=%s HR=%s", SHT31_REINTENTOS,
+          ultimo.temperatura.valida() ? "ok" : core::codigoFallo(ultimo.temperatura.fallo),
+          ultimo.humedad.valida() ? "ok" : core::codigoFallo(ultimo.humedad.fallo));
     return ultimo;
 }
