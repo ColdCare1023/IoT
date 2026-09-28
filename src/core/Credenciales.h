@@ -22,6 +22,11 @@ bool esMarcadorDeDesarrollo(const std::string& valor);
 /// ¿El valor sirve como credencial? Vacío, solo espacios o marcador → no.
 bool credencialValida(const std::string& valor);
 
+/// HU-14: el host MQTT es SOLO un nombre de host ([A-Za-z0-9.-]): sin
+/// esquema ("mqtt://"), sin puerto (":1883") ni ruta. El puerto 8883 y TLS
+/// los fija el firmware, así que una configuración no puede degradarlos.
+bool hostMqttValido(const std::string& host);
+
 /// ¿El conjunto permite intentar la conexión? Si no, el nodo debe seguir
 /// capturando en modo offline en vez de entrar en un ciclo de reintentos.
 bool aprovisionamientoCompleto(const std::string& ssid,

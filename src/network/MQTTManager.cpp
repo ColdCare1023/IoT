@@ -6,6 +6,8 @@
 #include "../core/Payload.h"
 #include "../system/Watchdog.h"
 
+static_assert(MQTT_PORT == 8883, "HU-14: solo mqtts (TLS) en 8883; no hay fallback a 1883.");
+
 MQTTManager::MQTTManager(WiFiClientSecure& tls) : _tls(tls) {}
 
 bool MQTTManager::_cargarCA() {
@@ -36,8 +38,12 @@ void MQTTManager::configurar(const String& host, const String& deviceId, const S
     _topicoAck = String(TOPICO_PREFIJO) + deviceId + "/ack";
     _lwt = core::serializarLWT(std::string(deviceId.c_str()));
 
-    _aprovisionado = core::credencialValida(std::string(host.c_str())) &&
+    // HU-14: un host con esquema o puerto ("mqtt://…", "…:1883") se rechaza.
+    _aprovisionado = core::hostMqttValido(std::string(host.c_str())) &&
                      core::credencialValida(std::string(token.c_str()));
+    if (!core::hostMqttValido(std::string(host.c_str())) && !host.isEmpty()) {
+        LOG_E("MQTT", "mqtt_host invalido: solo nombre de host, sin esquema ni puerto (TLS 8883 fijo).");
+    }
 
     // TLS: mbedTLS del ESP-IDF 4.4 negocia TLS 1.2 (no hay 1.0/1.1 al que
     // degradar). La garantía que depende de nosotros es autenticar al

@@ -41,7 +41,22 @@ void test_nodo_aprovisionado_se_acepta(void) {
         "THERMOSAFE_IOT", "abc123.emqx.cloud", "a1b2c3d4e5f60718"));
 }
 
+/// HU-14: la configuración no puede apuntar a un endpoint sin TLS.
+void test_host_mqtt_solo_nombre_sin_esquema_ni_puerto(void) {
+    TEST_ASSERT_TRUE(core::hostMqttValido("abc123.ala.us-east-1.emqxsl.com"));
+    TEST_ASSERT_TRUE(core::hostMqttValido("192.168.1.50"));
+    TEST_ASSERT_FALSE(core::hostMqttValido("mqtt://abc123.emqxsl.com"));
+    TEST_ASSERT_FALSE(core::hostMqttValido("abc123.emqxsl.com:1883"));
+    TEST_ASSERT_FALSE(core::hostMqttValido("abc123.emqxsl.com/mqtt"));
+    TEST_ASSERT_FALSE(core::hostMqttValido("abc 123.com"));
+    TEST_ASSERT_FALSE(core::hostMqttValido(""));
+    TEST_ASSERT_FALSE(core::hostMqttValido("tu-instancia.emqx.cloud"));  // marcador
+    TEST_ASSERT_FALSE(core::aprovisionamientoCompleto(
+        "THERMOSAFE_IOT", "abc123.emqxsl.com:1883", "a1b2c3d4e5f60718"));
+}
+
 void run_tests_credenciales(void) {
+    RUN_TEST(test_host_mqtt_solo_nombre_sin_esquema_ni_puerto);
     RUN_TEST(test_los_marcadores_del_repositorio_no_valen_como_credencial);
     RUN_TEST(test_vacio_y_espacios_no_valen);
     RUN_TEST(test_una_credencial_real_vale);

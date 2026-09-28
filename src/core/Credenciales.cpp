@@ -29,13 +29,23 @@ bool credencialValida(const std::string& valor) {
     return !esMarcadorDeDesarrollo(valor);
 }
 
+bool hostMqttValido(const std::string& host) {
+    if (!credencialValida(host) || host.size() > 253) return false;
+    for (char c : host) {
+        const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                        (c >= '0' && c <= '9') || c == '.' || c == '-';
+        if (!ok) return false;  // ':', '/', espacios, esquemas...
+    }
+    return host.front() != '.' && host.front() != '-' && host.back() != '.';
+}
+
 bool aprovisionamientoCompleto(const std::string& ssid,
                                const std::string& mqttHost,
                                const std::string& mqttToken) {
     // La contraseña del Wi-Fi NO entra en la comprobación: una red abierta es
     // una configuración legítima de laboratorio. El token del broker sí, porque
     // EMQX rechaza la conexión sin él.
-    return credencialValida(ssid) && credencialValida(mqttHost) &&
+    return credencialValida(ssid) && hostMqttValido(mqttHost) &&
            credencialValida(mqttToken);
 }
 

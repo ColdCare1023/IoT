@@ -94,6 +94,11 @@
 // =========================================================================
 // MQTT / EMQX Cloud Serverless — solo TLS en 8883, sin fallback a 1883
 // =========================================================================
+// HU-14: el puerto NO es configurable. Definirlo por build flag es un error
+// de compilación, no una advertencia: no existe forma de apuntar a 1883.
+#if defined(MQTT_PORT)
+  #error "MQTT_PORT no es configurable: solo se admite mqtts (TLS) en 8883 (HU-14)."
+#endif
 #define MQTT_PORT                 8883
 #define MQTT_QOS                  1
 #define MQTT_KEEPALIVE_S          60

@@ -98,6 +98,8 @@ bool guardarClaveNvs(const String& clave, const String& valor) {
         return ok;
     }
     if (!esClaveTexto(clave)) return false;
+    // HU-14: el host no puede traer esquema ni puerto (8883/TLS es fijo).
+    if (clave == "mqtt_host" && !core::hostMqttValido(std::string(valor.c_str()))) return false;
     if (clave == "device_id" && !core::deviceIdValido(std::string(valor.c_str()))) return false;
 
     Preferences nvs;
