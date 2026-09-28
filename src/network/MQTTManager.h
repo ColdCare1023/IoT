@@ -10,7 +10,7 @@
 #include "../config.h"
 
 /**
- * Cliente MQTT sobre TLS hacia EMQX Cloud Serverless (HU-09).
+ * Cliente MQTT sobre TLS hacia EMQX Cloud Serverless (HU-09, HU-13).
  *
  *  - Solo `mqtts` en 8883 con `WiFiClientSecure::setCACert()`: el nodo valida
  *    la cadena de confianza y el nombre del servidor (SNI + verificación de
@@ -19,6 +19,9 @@
  *  - Autenticación: usuario = device_id, contraseña = token propio.
  *  - Publicación QoS 1: `publish()` devuelve true solo con el PUBACK del
  *    broker (lwmqtt verifica el packet id).
+ *  - LWT QoS 1 registrado en el CONNECT (HU-13): si el nodo cae sin
+ *    despedirse, el broker publica `lwt_offline` al vencer el keep-alive.
+ *    Los cierres voluntarios usan DISCONNECT ordenado, que NO dispara el LWT.
  *
  * VERSIÓN DEL PROTOCOLO. La librería (256dpi/arduino-mqtt, lwmqtt) habla
  * MQTT 3.1.1; el core Arduino 2.0.17 (ESP-IDF 4.4) tampoco trae cliente
@@ -38,6 +41,7 @@ public:
     bool conectar();
     bool conectado();
     void loop();
+    void desconectarOrdenadamente();
 
     Publicacion publicar(const String& topico, const std::string& payload);
 
@@ -61,6 +65,7 @@ private:
     String _caPem;  // setCACert guarda el PUNTERO: la cadena debe vivir siempre
     String _topicoLecturas;
     String _topicoEventos;
+    std::string _lwt;
 
     bool _caCargada = false;
     bool _aprovisionado = false;

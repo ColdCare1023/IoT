@@ -11,7 +11,8 @@
  *       registro binario → LittleFS. SIEMPRE se guarda primero (offline-first):
  *       la captura nunca espera a la red.
  *   Red     (prioridad 2) — Wi-Fi con backoff exponencial, SNTP, canal
- *       MQTT/TLS hacia EMQX Cloud (solo 8883, CA validada) y consola serie.
+ *       MQTT/TLS hacia EMQX Cloud (solo 8883, CA validada), eventos de
+ *       conectividad y diagnóstico (online, LWT, arranque, buffer) y consola.
  */
 
 #include <Arduino.h>
@@ -20,6 +21,8 @@
 #include <esp_system.h>
 
 #include "config.h"
+#include "core/Json.h"
+#include "core/Payload.h"
 #include "core/Registro.h"
 #include "core/Tiempo.h"
 #include "network/MQTTManager.h"
@@ -29,6 +32,7 @@
 #include "sensors/SHT31Sensor.h"
 #include "storage/BufferLittleFS.h"
 #include "system/Configuracion.h"
+#include "system/Eventos.h"
 #include "system/Reloj.h"
 #include "system/Watchdog.h"
 
@@ -144,23 +148,6 @@ static void imprimirCaptura(const core::RegistroLectura& r, core::ResultadoGuard
                   (unsigned long)ESP.getFreeHeap());
 }
 
-/// HU-06 esc. 3: ninguna pérdida queda silenciosa. Aviso al cruzar el 80 %
-/// y reporte del episodio de saturación con su periodo.
-static void revisarAvisosBuffer() {
-    uint8_t pct = 0;
-    if (buffer.consumirAvisoOcupacion(pct)) {
-        LOG_E("Buffer", "Ocupacion %u%% (umbral de aviso %u%%): %lu pendientes de %lu.", pct,
-              BUFFER_UMBRAL_AVISO_PCT, (unsigned long)buffer.pendientes(),
-              (unsigned long)buffer.capacidad());
-    }
-    core::EstadoPerdidas p;
-    if (buffer.consumirAvisoPerdidas(p)) {
-        LOG_E("Buffer", "Muestras no almacenadas: total=%lu, episodio=%lu (%s) desde seq %lu hasta seq %lu.",
-              (unsigned long)p.total, (unsigned long)p.episodio, p.episodioAbierto ? "abierto" : "cerrado",
-              (unsigned long)p.desdeSeq, (unsigned long)p.hastaSeq);
-    }
-}
-
 static void taskCaptura(void*) {
     suscribirTareaAlWatchdog("Captura");
     TickType_t ultimo = xTaskGetTickCount();
@@ -174,7 +161,6 @@ static void taskCaptura(void*) {
                   (unsigned long)r.seqNo, textoGuardado(g));
         }
         imprimirCaptura(r, g);
-        revisarAvisosBuffer();
 
         // Espera hasta el próximo ciclo muestreando la puerta cada 50 ms.
         const TickType_t intervalo = pdMS_TO_TICKS(g_config.intervaloMuestreoS * 1000UL);
@@ -262,7 +248,8 @@ static void atenderConsola() {
         } else if (verbo == "rssi") {
             imprimirRssi();
         } else if (verbo == "reiniciar") {
-            Serial.println("Reiniciando...");
+            Serial.println("Reiniciando (DISCONNECT ordenado)...");
+            mqtt.desconectarOrdenadamente();  // HU-13 esc. 2: no dispara el LWT
             delay(200);
             ESP.restart();
         } else if (verbo == "nvs") {
@@ -292,8 +279,65 @@ static void atenderConsola() {
 // =========================================================================
 // Red
 // =========================================================================
+static void publicarEventoDirecto(const char* tipo, const std::string& detalle) {
+    const std::string json = core::serializarEvento(std::string(g_config.deviceId.c_str()), g_bootId,
+                                                    tipo, epochAhora(), uptimeSegundos(),
+                                                    baseTiempo(), detalle);
+    if (mqtt.publicar(mqtt.topicoEventos(), json) != MQTTManager::Publicacion::Confirmada) {
+        LOG_E("Red", "El broker no confirmo el evento '%s'.", tipo);
+    }
+}
+
+/// HU-06 esc. 3: ninguna pérdida queda silenciosa. Aviso al cruzar el 80 %
+/// y reporte del episodio de saturación con su periodo.
+static void revisarAvisosBuffer() {
+    uint8_t pct = 0;
+    if (buffer.consumirAvisoOcupacion(pct)) {
+        core::ObjetoJSON d;
+        d.sinSigno("ocupacion_pct", pct);
+        d.sinSigno("pendientes", buffer.pendientes());
+        d.sinSigno("capacidad", buffer.capacidad());
+        encolarEvento("buffer_80", d.cerrar());
+        LOG_E("Buffer", "Ocupacion %u%% (umbral de aviso %u%%).", pct, BUFFER_UMBRAL_AVISO_PCT);
+    }
+    core::EstadoPerdidas p;
+    if (buffer.consumirAvisoPerdidas(p)) {
+        core::ObjetoJSON d;
+        d.sinSigno("perdidas_total", p.total);
+        d.sinSigno("perdidas_episodio", p.episodio);
+        d.booleano("episodio_abierto", p.episodioAbierto);
+        d.sinSigno("desde_boot_id", p.desdeBoot);
+        d.sinSigno("desde_seq_no", p.desdeSeq);
+        if (p.desdeEpoch) d.cadena("desde", core::formatearISO8601(p.desdeEpoch));
+        else              d.nulo("desde");
+        d.sinSigno("hasta_boot_id", p.hastaBoot);
+        d.sinSigno("hasta_seq_no", p.hastaSeq);
+        if (p.hastaEpoch) d.cadena("hasta", core::formatearISO8601(p.hastaEpoch));
+        else              d.nulo("hasta");
+        d.cadena("causa", "buffer_lleno");
+        encolarEvento("buffer_saturado", d.cerrar());
+    }
+}
+
+static void publicarEventosPendientes() {
+    EventoPendiente e;
+    int publicados = 0;
+    while (publicados < 5 && tomarEvento(e)) {
+        const std::string json = core::serializarEvento(
+            std::string(g_config.deviceId.c_str()), g_bootId, e.tipo.c_str(), e.epoch, e.uptimeS,
+            baseTiempo(), e.detalleJSON);
+        alimentarWatchdog();
+        if (mqtt.publicar(mqtt.topicoEventos(), json) != MQTTManager::Publicacion::Confirmada) {
+            devolverEvento(e);  // se reintenta en la próxima pasada
+            return;
+        }
+        publicados++;
+    }
+}
+
 static void taskRed(void*) {
     suscribirTareaAlWatchdog("Red");
+    bool sesionAnunciada = false;
     wifi.configurar(g_config.wifiSsid, g_config.wifiPassword);
     wifi.begin();
 
@@ -309,20 +353,16 @@ static void taskRed(void*) {
         // HU-08: backoff exponencial 1 s → 60 s; la captura sigue en la
         // otra tarea aunque la red no vuelva nunca.
         if (!wifi.mantener()) {
+            sesionAnunciada = false;
             delay(200);
             continue;
         }
         arrancarSNTP();
 
-        WiFiManager::Recuperacion rec;
-        if (wifi.consumirRecuperacion(rec)) {
-            LOG_I("WiFi", "Reconectado tras episodio de diagnostico: %lu intentos, %lu s sin red.",
-                  (unsigned long)rec.intentos, (unsigned long)rec.duracionS);
-        }
-
         // HU-09: canal MQTT sobre TLS con la CA validada. Sin CA o sin
         // credenciales, fallo cerrado: no hay alternativa en texto plano.
         if (!mqtt.conectado()) {
+            sesionAnunciada = false;
             const bool ok = mqtt.conectar();
             alimentarWatchdog();  // handshake TLS + CONNACK: el tramo más largo
             if (!ok) {
@@ -330,7 +370,29 @@ static void taskRed(void*) {
                 continue;
             }
         }
+        if (!sesionAnunciada) {
+            // HU-13 esc. 3: el nodo anuncia que volvió a estar en línea.
+            core::ObjetoJSON d;
+            d.entero("rssi_dbm", wifi.rssi());
+            d.sinSigno("pendientes", buffer.pendientes());
+            d.cadena("firmware_version", core::textoVersionFirmware(FW_MAYOR, FW_MENOR, FW_PARCHE));
+            publicarEventoDirecto("online", d.cerrar());
+            // HU-08 esc. 3: el episodio de diagnóstico solo puede reportarse
+            // ahora, con la red de vuelta.
+            WiFiManager::Recuperacion rec;
+            if (wifi.consumirRecuperacion(rec)) {
+                core::ObjetoJSON dr;
+                dr.sinSigno("intentos_fallidos", rec.intentos);
+                dr.sinSigno("duracion_s", rec.duracionS);
+                dr.sinSigno("umbral_intentos", WIFI_UMBRAL_DIAGNOSTICO_INTENTOS);
+                encolarEvento("wifi_reconexion_prolongada", dr.cerrar());
+            }
+            sesionAnunciada = true;
+        }
         mqtt.loop();
+
+        revisarAvisosBuffer();
+        publicarEventosPendientes();
         delay(50);
     }
 }
@@ -344,6 +406,7 @@ void setup() {
     const esp_reset_reason_t motivo = esp_reset_reason();
 
     inicializarWatchdog();
+    iniciarEventos();
     g_config = cargarConfiguracion();
     g_bootId = cargarEIncrementarBootId();
     iniciarReloj(g_bootId);
@@ -374,6 +437,20 @@ void setup() {
 #if MC38_INSTALADO
     mc38.begin();
 #endif
+
+    {
+        core::ObjetoJSON d;
+        d.cadena("reset_reason", nombreReinicio(motivo));
+        d.cadena("firmware_version", core::textoVersionFirmware(FW_MAYOR, FW_MENOR, FW_PARCHE));
+        d.sinSigno("intervalo_s", g_config.intervaloMuestreoS);
+        d.booleano("mc38_instalado", MC38_INSTALADO != 0);
+        d.booleano("fs_formateado", formateado);
+        d.sinSigno("pendientes_recuperados", informe.pendientes);
+        d.sinSigno("segmentos_con_cola_parcial", informe.segmentosConColaParcial);
+        d.sinSigno("bytes_parciales_ignorados", informe.bytesParcialesIgnorados);
+        d.booleano("cursor_reconstruido", informe.cursorReconstruido);
+        encolarEvento("arranque", d.cerrar());
+    }
 
     xTaskCreatePinnedToCore(taskCaptura, "Captura", 8192, nullptr, 3, nullptr, 1);
     xTaskCreatePinnedToCore(taskRed, "Red", 16384, nullptr, 2, nullptr, 1);

@@ -3,6 +3,7 @@
 #include <LittleFS.h>
 
 #include "../core/Credenciales.h"
+#include "../core/Payload.h"
 
 MQTTManager::MQTTManager(WiFiClientSecure& tls) : _tls(tls) {}
 
@@ -31,6 +32,7 @@ void MQTTManager::configurar(const String& host, const String& deviceId, const S
     _token = token;
     _topicoLecturas = String(TOPICO_PREFIJO) + deviceId + "/lecturas";
     _topicoEventos = String(TOPICO_PREFIJO) + deviceId + "/eventos";
+    _lwt = core::serializarLWT(std::string(deviceId.c_str()));
 
     _aprovisionado = core::credencialValida(std::string(host.c_str())) &&
                      core::credencialValida(std::string(token.c_str()));
@@ -48,6 +50,8 @@ void MQTTManager::configurar(const String& host, const String& deviceId, const S
     _mqtt.setKeepAlive(MQTT_KEEPALIVE_S);
     _mqtt.setCleanSession(true);
     _mqtt.setTimeout(MQTT_COMMAND_TIMEOUT_MS);
+    // HU-13 esc. 1: el broker publica esto si el nodo cae sin DISCONNECT.
+    _mqtt.setWill(_topicoEventos.c_str(), _lwt.c_str(), /*retained=*/false, MQTT_QOS);
 }
 
 bool MQTTManager::conectar() {
@@ -78,6 +82,10 @@ bool MQTTManager::conectar() {
 bool MQTTManager::conectado() { return _mqtt.connected(); }
 
 void MQTTManager::loop() { _mqtt.loop(); }
+
+void MQTTManager::desconectarOrdenadamente() {
+    if (_mqtt.connected()) _mqtt.disconnect();
+}
 
 MQTTManager::Publicacion MQTTManager::publicar(const String& topico, const std::string& payload) {
     if (!_mqtt.connected()) return Publicacion::SinConexion;
