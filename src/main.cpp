@@ -65,6 +65,13 @@ static MQTTManager mqtt(tls);
 
 static volatile bool g_revisarTokenYa = false;
 
+#if MODO_DEMO
+// Excursión SIMULADA para la demo/sustentación. Cada lectura afectada lleva
+// "simulated": true. Este código no existe en el firmware de producción.
+static volatile uint32_t g_demoRestantes = 0;
+static volatile int16_t g_demoTempCenti = 1250;  // 12,50 °C
+#endif
+
 // =========================================================================
 // Utilidades
 // =========================================================================
@@ -140,6 +147,15 @@ static core::RegistroLectura capturar() {
     r.fwMayor = FW_MAYOR;
     r.fwMenor = FW_MENOR;
     r.fwParche = FW_PARCHE;
+
+#if MODO_DEMO
+    if (g_demoRestantes > 0) {
+        g_demoRestantes = g_demoRestantes - 1;
+        r.tempDsCenti = g_demoTempCenti;
+        r.falloDs = core::FalloSensor::Ninguno;
+        r.poner(core::BANDERA_SIMULADO, true);
+    }
+#endif
     return r;
 }
 
@@ -158,17 +174,37 @@ static void imprimirCaptura(const core::RegistroLectura& r, core::ResultadoGuard
     const std::string t = r.tiene(core::BANDERA_TIEMPO_SNTP) ? core::formatearISO8601(r.capturadoEpoch)
                                                              : std::string("-");
     Serial.printf("[CAP] boot=%lu seq=%lu up=%lu t=%s tq=%s ds=%s ds_f=%s sht=%s hr=%s sht_f=%s "
-                  "door=%s door_s=%u pwr=%s g=%s q=%lu ocup=%u heap=%lu\n",
+                  "door=%s door_s=%u pwr=%s sim=%d g=%s q=%lu ocup=%u heap=%lu\n",
                   (unsigned long)r.bootId, (unsigned long)r.seqNo, (unsigned long)r.uptimeS, t.c_str(),
                   r.tiene(core::BANDERA_TIEMPO_SNTP) ? "sntp" : "nosync", ds, dsF ? dsF : "-", sht,
                   hr, shF ? shF : "-", puerta, (unsigned)r.puertaAbiertaS,
                   r.tiene(core::BANDERA_SENSADO_ENERGIA)
                       ? (r.tiene(core::BANDERA_EN_RESPALDO) ? "backup" : "mains")
                       : "NA",
-                  textoGuardado(g),
+                  r.tiene(core::BANDERA_SIMULADO) ? 1 : 0, textoGuardado(g),
                   (unsigned long)buffer.pendientes(), (unsigned)buffer.ocupacionPct(),
                   (unsigned long)ESP.getFreeHeap());
 }
+
+#if MODO_DEMO
+static void revisarBotonDemo() {
+    static uint32_t presionadoDesde = 0;
+    static bool disparado = false;
+    const bool presionado = digitalRead(PIN_BOTON_DEMO) == LOW;
+    if (!presionado) {
+        presionadoDesde = 0;
+        disparado = false;
+        return;
+    }
+    if (presionadoDesde == 0) presionadoDesde = millis();
+    if (!disparado && millis() - presionadoDesde > 1000) {  // pulsación larga: evita toques accidentales
+        disparado = true;
+        g_demoTempCenti = 1250;
+        g_demoRestantes = 4;
+        LOG_I("DEMO", "Excursion SIMULADA: 12.50 C en las proximas 4 lecturas (simulated=true).");
+    }
+}
+#endif
 
 static void taskCaptura(void*) {
     suscribirTareaAlWatchdog("Captura");
@@ -194,6 +230,9 @@ static void taskCaptura(void*) {
             mc38.poll();  // antirrebote de 50 ms: requiere muestras frecuentes
 #endif
             muestrearEnergia();  // conmutación a respaldo con timestamp (HU-52 esc. 1)
+#if MODO_DEMO
+            revisarBotonDemo();
+#endif
             alimentarWatchdog();
         }
         vTaskDelayUntil(&ultimo, intervalo);
@@ -265,7 +304,12 @@ static void atenderConsola() {
         resto.trim();
 
         if (verbo == "ayuda" || verbo == "help") {
-            Serial.println("Comandos: estado | rssi | nvs set <clave> <valor> | nvs borrar <clave> | reiniciar");
+            Serial.println("Comandos: estado | rssi | nvs set <clave> <valor> | nvs borrar <clave> | "
+                           "reiniciar"
+#if MODO_DEMO
+                           " | demo excursion <temp_C> <n_lecturas>"
+#endif
+            );
             Serial.println("Claves NVS: wifi_ssid wifi_pass mqtt_host mqtt_token device_id intervalo_s");
         } else if (verbo == "estado") {
             imprimirEstado();
@@ -296,6 +340,20 @@ static void atenderConsola() {
             } else {
                 Serial.println("Uso: nvs set <clave> <valor> | nvs borrar <clave>");
             }
+#if MODO_DEMO
+        } else if (verbo == "demo") {
+            // demo excursion 12.5 4
+            float temp = 12.5f;
+            long n = 4;
+            if (sscanf(resto.c_str(), "excursion %f %ld", &temp, &n) >= 1 && n > 0 && n <= 20 &&
+                temp >= -40.0f && temp <= 60.0f) {
+                g_demoTempCenti = (int16_t)(temp * 100.0f);
+                g_demoRestantes = (uint32_t)n;
+                Serial.printf("[DEMO] %.2f C SIMULADOS en las proximas %ld lecturas.\n", temp, n);
+            } else {
+                Serial.println("Uso: demo excursion <temp_C> <n_lecturas 1..20>");
+            }
+#endif
         } else {
             Serial.printf("Comando desconocido: '%s' (escribir 'ayuda').\n", verbo.c_str());
         }
@@ -520,10 +578,10 @@ void setup() {
 
     // Línea fija de arranque: la usa analizar_ensayo.py para contar reinicios.
     Serial.printf("[BOOT] boot_id=%lu reset=%s fw=v%d.%d.%d device=%s intervalo_s=%lu mc38=%d "
-                  "sensado_energia=%d credenciales=%s\n",
+                  "sensado_energia=%d demo=%d credenciales=%s\n",
                   (unsigned long)g_bootId, nombreReinicio(motivo), FW_MAYOR, FW_MENOR, FW_PARCHE,
                   g_config.deviceId.c_str(), (unsigned long)g_config.intervaloMuestreoS,
-                  MC38_INSTALADO, SENSADO_ENERGIA_INSTALADO, g_config.origen.c_str());
+                  MC38_INSTALADO, SENSADO_ENERGIA_INSTALADO, MODO_DEMO, g_config.origen.c_str());
 
     bool formateado = false;
     core::InformeMontaje informe;
@@ -544,6 +602,10 @@ void setup() {
     sht31.begin();
 #if MC38_INSTALADO
     mc38.begin();
+#endif
+#if MODO_DEMO
+    pinMode(PIN_BOTON_DEMO, INPUT_PULLUP);
+    LOG_I("DEMO", "FIRMWARE DE DEMOSTRACION: mantener BOOT 1 s = excursion simulada.");
 #endif
 
     {
