@@ -8,7 +8,8 @@
  * Tarea de captura en el núcleo 1 (el 0 queda para la pila Wi-Fi): cada
  * intervalo lee DS18B20 (interior), SHT31 (temperatura y humedad del
  * ambiente) y MC-38 (puerta), arma un RegistroLectura identificado por
- * boot_id y seq_no y lo estructura con el contrato de telemetría v1.0.
+ * boot_id y seq_no y lo guarda SIEMPRE primero en LittleFS (offline-first):
+ * la captura nunca espera a la red. El JSON v1.0 se genera al publicar.
  */
 
 #include <Arduino.h>
@@ -21,6 +22,7 @@
 #include "sensors/DS18B20Sensor.h"
 #include "sensors/MC38Sensor.h"
 #include "sensors/SHT31Sensor.h"
+#include "storage/BufferLittleFS.h"
 #include "system/Configuracion.h"
 #include "system/Reloj.h"
 #include "system/Watchdog.h"
@@ -37,6 +39,7 @@ static SHT31Sensor sht31(SHT31_DIRECCION, PIN_I2C_SDA, PIN_I2C_SCL);
 #if MC38_INSTALADO
 static MC38Sensor mc38(PIN_MC38);
 #endif
+static BufferLittleFS buffer;
 
 // =========================================================================
 // Utilidades
@@ -54,6 +57,14 @@ static const char* nombreReinicio(esp_reset_reason_t r) {
         case ESP_RST_BROWNOUT:  return "BROWNOUT";
         case ESP_RST_SDIO:      return "SDIO";
         default:                return "UNKNOWN";
+    }
+}
+
+static const char* textoGuardado(core::ResultadoGuardado g) {
+    switch (g) {
+        case core::ResultadoGuardado::Guardado:             return "OK";
+        case core::ResultadoGuardado::SaturadoNoAlmacenado: return "SATURADO";
+        default:                                            return "ERROR_ESCRITURA";
     }
 }
 
@@ -104,7 +115,7 @@ static core::RegistroLectura capturar() {
 
 /// Línea fija por captura. La consumen los scripts de QA (ensayo doméstico
 /// de 2–3 h): no cambiar el formato sin actualizar analizar_ensayo.py.
-static void imprimirCaptura(const core::RegistroLectura& r) {
+static void imprimirCaptura(const core::RegistroLectura& r, core::ResultadoGuardado g) {
     char ds[16], sht[16], hr[16];
     textoCentesimas(ds, sizeof(ds), r.tempDsCenti, r.falloDs != core::FalloSensor::Ninguno);
     textoCentesimas(sht, sizeof(sht), r.tempShtCenti, r.falloShtT != core::FalloSensor::Ninguno);
@@ -117,11 +128,29 @@ static void imprimirCaptura(const core::RegistroLectura& r) {
     const std::string t = r.tiene(core::BANDERA_TIEMPO_SNTP) ? core::formatearISO8601(r.capturadoEpoch)
                                                              : std::string("-");
     Serial.printf("[CAP] boot=%lu seq=%lu up=%lu t=%s tq=%s ds=%s ds_f=%s sht=%s hr=%s sht_f=%s "
-                  "door=%s door_s=%u heap=%lu\n",
+                  "door=%s door_s=%u g=%s q=%lu ocup=%u heap=%lu\n",
                   (unsigned long)r.bootId, (unsigned long)r.seqNo, (unsigned long)r.uptimeS, t.c_str(),
                   r.tiene(core::BANDERA_TIEMPO_SNTP) ? "sntp" : "nosync", ds, dsF ? dsF : "-", sht,
-                  hr, shF ? shF : "-", puerta, (unsigned)r.puertaAbiertaS,
+                  hr, shF ? shF : "-", puerta, (unsigned)r.puertaAbiertaS, textoGuardado(g),
+                  (unsigned long)buffer.pendientes(), (unsigned)buffer.ocupacionPct(),
                   (unsigned long)ESP.getFreeHeap());
+}
+
+/// HU-06 esc. 3: ninguna pérdida queda silenciosa. Aviso al cruzar el 80 %
+/// y reporte del episodio de saturación con su periodo.
+static void revisarAvisosBuffer() {
+    uint8_t pct = 0;
+    if (buffer.consumirAvisoOcupacion(pct)) {
+        LOG_E("Buffer", "Ocupacion %u%% (umbral de aviso %u%%): %lu pendientes de %lu.", pct,
+              BUFFER_UMBRAL_AVISO_PCT, (unsigned long)buffer.pendientes(),
+              (unsigned long)buffer.capacidad());
+    }
+    core::EstadoPerdidas p;
+    if (buffer.consumirAvisoPerdidas(p)) {
+        LOG_E("Buffer", "Muestras no almacenadas: total=%lu, episodio=%lu (%s) desde seq %lu hasta seq %lu.",
+              (unsigned long)p.total, (unsigned long)p.episodio, p.episodioAbierto ? "abierto" : "cerrado",
+              (unsigned long)p.desdeSeq, (unsigned long)p.hastaSeq);
+    }
 }
 
 static void taskCaptura(void*) {
@@ -131,20 +160,13 @@ static void taskCaptura(void*) {
 
     for (;;) {
         const core::RegistroLectura r = capturar();
-        imprimirCaptura(r);
-
-        // HU-05: contrato v1.0. Si el registro no cumple el esquema o el
-        // JSON excede el límite, no se genera una estructura inválida.
-        const std::string json =
-            core::serializarTelemetria(r, std::string(g_config.deviceId.c_str()), baseTiempo());
-        if (json.empty()) {
-            std::string motivo;
-            core::validarRegistro(r, motivo);
-            LOG_E("Payload", "seq=%lu no cumple el contrato v1.0 (%s): no se genera.",
-                  (unsigned long)r.seqNo, motivo.c_str());
-        } else {
-            LOG_I("Payload", "%s", json.c_str());
+        const core::ResultadoGuardado g = buffer.guardar(r);
+        if (g != core::ResultadoGuardado::Guardado) {
+            LOG_E("Captura", "Lectura seq=%lu NO almacenada (%s): contada como perdida.",
+                  (unsigned long)r.seqNo, textoGuardado(g));
         }
+        imprimirCaptura(r, g);
+        revisarAvisosBuffer();
 
         // Espera hasta el próximo ciclo muestreando la puerta cada 50 ms.
         const TickType_t intervalo = pdMS_TO_TICKS(g_config.intervaloMuestreoS * 1000UL);
@@ -178,6 +200,14 @@ void setup() {
     Serial.printf("[BOOT] boot_id=%lu reset=%s fw=v%d.%d.%d device=%s intervalo_s=%lu mc38=%d\n",
                   (unsigned long)g_bootId, nombreReinicio(motivo), FW_MAYOR, FW_MENOR, FW_PARCHE,
                   g_config.deviceId.c_str(), (unsigned long)g_config.intervaloMuestreoS, MC38_INSTALADO);
+
+    bool formateado = false;
+    core::InformeMontaje informe;
+    if (!buffer.begin(formateado, informe)) {
+        LOG_E("Setup", "LittleFS inutilizable: cada lectura se contara como perdida.");
+    } else if (formateado) {
+        LOG_E("Setup", "LittleFS no montaba y se formateo: buffer vacio.");
+    }
 
     ds18b20.begin();
     sht31.begin();
