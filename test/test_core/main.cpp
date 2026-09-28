@@ -12,6 +12,7 @@ void tearDown(void) {}
 void run_tests_sensores(void);
 void run_tests_tiempo(void);
 void run_tests_contrato(void);
+void run_tests_ack(void);
 void run_tests_cola(void);
 void run_tests_antirrebote(void);
 void run_tests_backoff(void);
@@ -22,6 +23,7 @@ int main(int, char**) {
     run_tests_sensores();
     run_tests_tiempo();
     run_tests_contrato();
+    run_tests_ack();
     run_tests_cola();
     run_tests_antirrebote();
     run_tests_backoff();

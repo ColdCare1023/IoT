@@ -4,6 +4,7 @@
 
 #include "../core/Credenciales.h"
 #include "../core/Payload.h"
+#include "../system/Watchdog.h"
 
 MQTTManager::MQTTManager(WiFiClientSecure& tls) : _tls(tls) {}
 
@@ -32,6 +33,7 @@ void MQTTManager::configurar(const String& host, const String& deviceId, const S
     _token = token;
     _topicoLecturas = String(TOPICO_PREFIJO) + deviceId + "/lecturas";
     _topicoEventos = String(TOPICO_PREFIJO) + deviceId + "/eventos";
+    _topicoAck = String(TOPICO_PREFIJO) + deviceId + "/ack";
     _lwt = core::serializarLWT(std::string(deviceId.c_str()));
 
     _aprovisionado = core::credencialValida(std::string(host.c_str())) &&
@@ -50,8 +52,8 @@ void MQTTManager::configurar(const String& host, const String& deviceId, const S
     _mqtt.setKeepAlive(MQTT_KEEPALIVE_S);
     _mqtt.setCleanSession(true);
     _mqtt.setTimeout(MQTT_COMMAND_TIMEOUT_MS);
-    // HU-13 esc. 1: el broker publica esto si el nodo cae sin DISCONNECT.
     _mqtt.setWill(_topicoEventos.c_str(), _lwt.c_str(), /*retained=*/false, MQTT_QOS);
+    _mqtt.onMessage([this](String& topico, String& payload) { _alRecibir(topico, payload); });
 }
 
 bool MQTTManager::conectar() {
@@ -69,13 +71,16 @@ bool MQTTManager::conectar() {
         const int rc = (int)_mqtt.returnCode();
         LOG_E("MQTT", "Conexion rechazada: lastError=%d returnCode=%d.", (int)_mqtt.lastError(), rc);
         if (rc == LWMQTT_BAD_USERNAME_OR_PASSWORD || rc == LWMQTT_NOT_AUTHORIZED) {
-            LOG_E("MQTT", "  -> credencial invalida o revocada.");
+            LOG_E("MQTT", "  -> credencial invalida o revocada (HU-10/HU-44).");
         } else if (rc == 0) {
             LOG_E("MQTT", "  -> sin CONNACK: TLS rechazado (CA/hostname) o red caida (HU-09).");
         }
         return false;
     }
-    LOG_I("MQTT", "Conectado (TLS, QoS %d).", MQTT_QOS);
+    if (!_mqtt.subscribe(_topicoAck.c_str(), MQTT_QOS)) {
+        LOG_E("MQTT", "No se pudo suscribir a %s: el buffer no se liberara.", _topicoAck.c_str());
+    }
+    LOG_I("MQTT", "Conectado (TLS, QoS %d). Acuses en %s.", MQTT_QOS, _topicoAck.c_str());
     return true;
 }
 
@@ -89,10 +94,39 @@ void MQTTManager::desconectarOrdenadamente() {
 
 MQTTManager::Publicacion MQTTManager::publicar(const String& topico, const std::string& payload) {
     if (!_mqtt.connected()) return Publicacion::SinConexion;
-    // QoS 1: true SOLO con el PUBACK del broker.
+    // QoS 1: true SOLO con el PUBACK del broker. El PUBACK NO autoriza a
+    // borrar nada del buffer; eso lo decide el acuse lógico (ver Ack.h).
     const bool ok = _mqtt.publish(topico.c_str(), payload.c_str(), (int)payload.size(),
                                   /*retained=*/false, MQTT_QOS);
     if (ok) return Publicacion::Confirmada;
     LOG_E("MQTT", "Sin PUBACK (lastError=%d).", (int)_mqtt.lastError());
     return _mqtt.connected() ? Publicacion::SinPuback : Publicacion::SinConexion;
+}
+
+bool MQTTManager::esperarAck(uint32_t bootId, uint32_t seqNo, uint32_t timeoutMs,
+                             core::EstadoAck& estado) {
+    const uint32_t inicio = millis();
+    for (;;) {
+        // Puede haber llegado ya durante el publish() (lwmqtt procesa
+        // entrantes mientras espera el PUBACK).
+        if (_acks.buscar(bootId, seqNo, estado)) {
+            _acks.olvidar(bootId, seqNo);
+            return true;
+        }
+        if (millis() - inicio >= timeoutMs || !_mqtt.connected()) return false;
+        _mqtt.loop();
+        alimentarWatchdog();
+        delay(10);
+    }
+}
+
+void MQTTManager::_alRecibir(String& topico, String& payload) {
+    if (topico != _topicoAck) return;
+    core::AckLogico ack;
+    if (!core::parsearAck(std::string(payload.c_str()), ack) ||
+        ack.deviceId != std::string(_deviceId.c_str())) {
+        _acksIgnorados++;  // un acuse ambiguo o ajeno nunca libera nada
+        return;
+    }
+    _acks.anotar(ack.bootId, ack.seqNo, ack.estado);
 }

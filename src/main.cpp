@@ -12,7 +12,14 @@
  *       la captura nunca espera a la red.
  *   Red     (prioridad 2) — Wi-Fi con backoff exponencial, SNTP, canal
  *       MQTT/TLS hacia EMQX Cloud (solo 8883, CA validada), eventos de
- *       conectividad y diagnóstico (online, LWT, arranque, buffer) y consola.
+ *       conectividad y diagnóstico (online, LWT, arranque, buffer), drenaje
+ *       FIFO del buffer con acuse lógico y consola serie.
+ *
+ * Flujo de una lectura:
+ *   sensores → RegistroLectura (CRC32) → LittleFS
+ *            → JSON v1.0 → PUBLISH QoS 1 → PUBACK (broker)
+ *            → acuse lógico del backend tras COMMIT en PostgreSQL
+ *            → recién ahí se libera de LittleFS.
  */
 
 #include <Arduino.h>
@@ -21,11 +28,13 @@
 #include <esp_system.h>
 
 #include "config.h"
+#include "core/Backoff.h"
 #include "core/Json.h"
 #include "core/Payload.h"
 #include "core/Registro.h"
 #include "core/Tiempo.h"
 #include "network/MQTTManager.h"
+#include "network/TransmisorMQTT.h"
 #include "network/WiFiManager.h"
 #include "sensors/DS18B20Sensor.h"
 #include "sensors/MC38Sensor.h"
@@ -337,6 +346,10 @@ static void publicarEventosPendientes() {
 
 static void taskRed(void*) {
     suscribirTareaAlWatchdog("Red");
+    static TransmisorMQTT transmisor(mqtt, g_config.deviceId);
+    core::Backoff backoffDrenaje(DRENAJE_REINTENTO_BASE_MS, DRENAJE_REINTENTO_MAX_MS, 2);
+    uint32_t ultimoDrenajeMs = 0;
+    bool drenajeEnEspera = false;
     bool sesionAnunciada = false;
     wifi.configurar(g_config.wifiSsid, g_config.wifiPassword);
     wifi.begin();
@@ -387,12 +400,40 @@ static void taskRed(void*) {
                 dr.sinSigno("umbral_intentos", WIFI_UMBRAL_DIAGNOSTICO_INTENTOS);
                 encolarEvento("wifi_reconexion_prolongada", dr.cerrar());
             }
+            backoffDrenaje.registrarExito();
+            drenajeEnEspera = false;
             sesionAnunciada = true;
         }
         mqtt.loop();
 
         revisarAvisosBuffer();
         publicarEventosPendientes();
+
+        // HU-07: drenaje FIFO con acuse lógico. Si el backend no acusa, se
+        // espera con backoff para no republicar en ráfaga.
+        if (!drenajeEnEspera || backoffDrenaje.debeIntentar(millis(), ultimoDrenajeMs)) {
+            ultimoDrenajeMs = millis();
+            const core::ResumenDrenaje r = buffer.drenar(transmisor, DRENAJE_MAX_POR_CICLO);
+            if (r.detenido) {
+                if (drenajeEnEspera) backoffDrenaje.registrarFallo();
+                drenajeEnEspera = true;
+            } else {
+                backoffDrenaje.registrarExito();
+                drenajeEnEspera = false;
+            }
+            if (r.corruptos + r.rechazados + r.invalidos > 0) {
+                core::ObjetoJSON d;
+                d.sinSigno("corruptos", (uint32_t)r.corruptos);
+                d.sinSigno("rechazados_backend", (uint32_t)r.rechazados);
+                d.sinSigno("invalidos", (uint32_t)r.invalidos);
+                d.sinSigno("cuarentena_total", buffer.cuarentenados());
+                encolarEvento("registros_en_cuarentena", d.cerrar());
+            }
+            if (r.confirmados > 0) {
+                LOG_I("Red", "%d lectura(s) con acuse logico; quedan %lu.", r.confirmados,
+                      (unsigned long)buffer.pendientes());
+            }
+        }
         delay(50);
     }
 }
