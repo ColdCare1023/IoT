@@ -6,8 +6,9 @@
  * Capa Edge — responsable: Brenda Lucía Gamio Upiachihua.
  *
  * Tarea de captura en el núcleo 1 (el 0 queda para la pila Wi-Fi): cada
- * intervalo lee la sonda DS18B20 y registra la lectura identificada por
- * boot_id y seq_no, con su hora UTC solo si es confiable.
+ * intervalo lee la sonda DS18B20 (interior) y el SHT31 (ambiente) y registra
+ * la lectura identificada por boot_id y seq_no, con su hora UTC solo si es
+ * confiable. Una falla del SHT31 nunca invalida la lectura del DS18B20.
  */
 
 #include <Arduino.h>
@@ -17,6 +18,7 @@
 #include "core/Sensores.h"
 #include "core/Tiempo.h"
 #include "sensors/DS18B20Sensor.h"
+#include "sensors/SHT31Sensor.h"
 #include "system/Configuracion.h"
 #include "system/Reloj.h"
 #include "system/Watchdog.h"
@@ -29,6 +31,7 @@ static uint32_t g_bootId = 0;
 static uint32_t g_seqNo = 0;  // solo lo escribe la tarea de captura
 
 static DS18B20Sensor ds18b20(PIN_DS18B20);
+static SHT31Sensor sht31(SHT31_DIRECCION, PIN_I2C_SDA, PIN_I2C_SCL);
 
 // =========================================================================
 // Utilidades
@@ -61,14 +64,16 @@ static void textoLectura(char* buf, size_t n, const core::LecturaSensor& l) {
 /// Línea fija por captura. La consumen los scripts de QA (ensayo doméstico
 /// de 2–3 h): no cambiar el formato sin actualizar analizar_ensayo.py.
 static void imprimirCaptura(uint32_t seq, uint32_t uptimeS, uint32_t epoch,
-                            const core::LecturaSensor& ds) {
-    char dsTxt[16];
+                            const core::LecturaSensor& ds, const core::LecturaSHT31& sht) {
+    char dsTxt[16], shtTxt[16];
     textoLectura(dsTxt, sizeof(dsTxt), ds);
+    textoLectura(shtTxt, sizeof(shtTxt), sht.temperatura);
     const char* dsF = core::codigoFallo(ds.fallo);
+    const char* shF = core::codigoFallo(sht.temperatura.fallo);
     const std::string t = epoch != 0 ? core::formatearISO8601(epoch) : std::string("-");
-    Serial.printf("[CAP] boot=%lu seq=%lu up=%lu t=%s tq=%s ds=%s ds_f=%s heap=%lu\n",
+    Serial.printf("[CAP] boot=%lu seq=%lu up=%lu t=%s tq=%s ds=%s ds_f=%s sht=%s sht_f=%s heap=%lu\n",
                   (unsigned long)g_bootId, (unsigned long)seq, (unsigned long)uptimeS, t.c_str(),
-                  epoch != 0 ? "sntp" : "nosync", dsTxt, dsF ? dsF : "-",
+                  epoch != 0 ? "sntp" : "nosync", dsTxt, dsF ? dsF : "-", shtTxt, shF ? shF : "-",
                   (unsigned long)ESP.getFreeHeap());
 }
 
@@ -84,7 +89,9 @@ static void taskCaptura(void*) {
         // Nunca un código de error como valor: una falla sale como
         // SENSOR_FAULT con su motivo (HU-01 esc. 2 y 3).
         const core::LecturaSensor ds = ds18b20.leer();
-        imprimirCaptura(seq, uptime, epoch, ds);
+        alimentarWatchdog();
+        const core::LecturaSHT31 sht = sht31.leer();  // independiente del DS18B20
+        imprimirCaptura(seq, uptime, epoch, ds, sht);
 
         const TickType_t intervalo = pdMS_TO_TICKS(g_config.intervaloMuestreoS * 1000UL);
         for (;;) {
@@ -116,6 +123,7 @@ void setup() {
                   g_config.deviceId.c_str(), (unsigned long)g_config.intervaloMuestreoS);
 
     ds18b20.begin();
+    sht31.begin();
 
     xTaskCreatePinnedToCore(taskCaptura, "Captura", 8192, nullptr, 3, nullptr, 1);
 }

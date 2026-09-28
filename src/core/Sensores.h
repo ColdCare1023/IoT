@@ -59,6 +59,8 @@ struct LecturaSensor {
 // Rangos físicos (hojas de datos).
 static const float DS18B20_MIN_C = -55.0f;
 static const float DS18B20_MAX_C = 125.0f;
+static const float SHT31_T_MIN_C = -40.0f;
+static const float SHT31_T_MAX_C = 125.0f;
 
 /// Valor crudo de power-on reset del DS18B20 (85,0 °C = 0x0550 en 1/16 °C).
 static const int16_t DS18B20_RAW_POWER_ON = 0x0550;
@@ -66,6 +68,10 @@ static const int16_t DS18B20_RAW_POWER_ON = 0x0550;
 /// CRC-8 Dallas/Maxim (polinomio x^8+x^5+x^4+1, reflejado, init 0x00).
 /// Es el del scratchpad y la ROM del DS18B20.
 uint8_t crc8Maxim(const uint8_t* datos, size_t longitud);
+
+/// CRC-8 Sensirion (polinomio 0x31, init 0xFF, sin reflejar). Protege cada
+/// palabra de 16 bits que entrega el SHT31. CRC(0xBEEF) = 0x92.
+uint8_t crc8Sensirion(const uint8_t* datos, size_t longitud);
 
 /**
  * Decodifica el scratchpad de 9 bytes del DS18B20.
@@ -84,6 +90,20 @@ uint8_t crc8Maxim(const uint8_t* datos, size_t longitud);
  * los bits indefinidos, como exige la hoja de datos para 9–11 bits.
  */
 LecturaSensor decodificarScratchpadDS18B20(const uint8_t scratchpad[9]);
+
+/// Resultado de una medición SHT31.
+struct LecturaSHT31 {
+    LecturaSensor temperatura;
+};
+
+/**
+ * Decodifica la palabra de temperatura de la trama del SHT31 (T_msb, T_lsb,
+ * T_crc, ...). T = −45 + 175·S/65535.
+ */
+LecturaSHT31 decodificarSHT31(const uint8_t trama[6]);
+
+/// Marca la lectura del SHT31 con un fallo (p. ej. sin ACK I²C).
+LecturaSHT31 falloSHT31(FalloSensor fallo);
 
 }  // namespace core
 
