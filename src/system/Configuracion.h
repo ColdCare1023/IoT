@@ -12,6 +12,7 @@
  *
  * Claves NVS (namespace "thermotrace"):
  *   wifi_ssid, wifi_pass, mqtt_host, mqtt_token  — credenciales
+ *   device_id                                    — reemplaza DEVICE_ID
  *   intervalo_s                                  — intervalo de muestreo (10..3600)
  *   boot_id                                      — contador de arranques
  *   perdidas                                     — contador persistente (blob)

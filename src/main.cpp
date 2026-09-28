@@ -253,7 +253,7 @@ static void atenderConsola() {
 
         if (verbo == "ayuda" || verbo == "help") {
             Serial.println("Comandos: estado | rssi | nvs set <clave> <valor> | nvs borrar <clave> | reiniciar");
-            Serial.println("Claves NVS: wifi_ssid wifi_pass mqtt_host mqtt_token intervalo_s");
+            Serial.println("Claves NVS: wifi_ssid wifi_pass mqtt_host mqtt_token device_id intervalo_s");
         } else if (verbo == "estado") {
             imprimirEstado();
         } else if (verbo == "rssi") {

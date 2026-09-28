@@ -4,8 +4,10 @@
 
 #include "../config.h"
 #include "../core/Credenciales.h"
+#include "../core/Payload.h"
 
-static const char* const CLAVES_TEXTO[] = {"wifi_ssid", "wifi_pass", "mqtt_host", "mqtt_token"};
+static const char* const CLAVES_TEXTO[] = {"wifi_ssid", "wifi_pass", "mqtt_host", "mqtt_token",
+                                           "device_id"};
 
 bool ConfiguracionNodo::credencialesCompletas() const {
     return core::aprovisionamientoCompleto(std::string(wifiSsid.c_str()),
@@ -48,6 +50,8 @@ ConfiguracionNodo cargarConfiguracion() {
     c.deviceId = DEVICE_ID;
     c.intervaloMuestreoS = INTERVALO_MUESTREO_S_DEFECTO;
     if (hayNvs) {
+        const String id = nvs.getString("device_id", "");
+        if (core::deviceIdValido(std::string(id.c_str()))) c.deviceId = id;
         c.intervaloMuestreoS = acotarIntervalo(nvs.getUInt("intervalo_s", INTERVALO_MUESTREO_S_DEFECTO));
         nvs.end();
     }
@@ -94,6 +98,7 @@ bool guardarClaveNvs(const String& clave, const String& valor) {
         return ok;
     }
     if (!esClaveTexto(clave)) return false;
+    if (clave == "device_id" && !core::deviceIdValido(std::string(valor.c_str()))) return false;
 
     Preferences nvs;
     if (!nvs.begin(NVS_NAMESPACE, false)) return false;
