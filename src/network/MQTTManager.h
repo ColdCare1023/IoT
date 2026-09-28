@@ -11,7 +11,7 @@
 #include "../core/Ack.h"
 
 /**
- * Cliente MQTT sobre TLS hacia EMQX Cloud Serverless (HU-07, HU-09, HU-11, HU-13).
+ * Cliente MQTT sobre TLS hacia EMQX Cloud Serverless (HU-09, HU-11, HU-13, HU-14).
  *
  *  - Solo `mqtts` en 8883 con `WiFiClientSecure::setCACert()`: el nodo valida
  *    la cadena de confianza y el nombre del servidor (SNI + verificación de
@@ -44,6 +44,10 @@ public:
     bool conectado();
     void loop();
     void desconectarOrdenadamente();
+
+    /// HU-44: el nuevo token se usa en el PRÓXIMO conectar().
+    void actualizarToken(const String& token);
+    const String& token() const { return _token; }
 
     Publicacion publicar(const String& topico, const std::string& payload);
 

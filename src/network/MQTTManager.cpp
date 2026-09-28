@@ -92,6 +92,12 @@ void MQTTManager::desconectarOrdenadamente() {
     if (_mqtt.connected()) _mqtt.disconnect();
 }
 
+void MQTTManager::actualizarToken(const String& token) {
+    _token = token;
+    _aprovisionado = core::credencialValida(std::string(_host.c_str())) &&
+                     core::credencialValida(std::string(token.c_str()));
+}
+
 MQTTManager::Publicacion MQTTManager::publicar(const String& topico, const std::string& payload) {
     if (!_mqtt.connected()) return Publicacion::SinConexion;
     // QoS 1: true SOLO con el PUBACK del broker. El PUBACK NO autoriza a

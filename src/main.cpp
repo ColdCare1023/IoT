@@ -62,6 +62,8 @@ static WiFiClientSecure tls;
 static WiFiManager wifi;
 static MQTTManager mqtt(tls);
 
+static volatile bool g_revisarTokenYa = false;
+
 // =========================================================================
 // Utilidades
 // =========================================================================
@@ -272,8 +274,10 @@ static void atenderConsola() {
                 const String valor = e3 < 0 ? String() : args.substring(e3 + 1);
                 const bool ok = guardarClaveNvs(clave, valor);
                 // Nunca se hace eco del valor: el monitor serie acaba en anexos.
-                Serial.printf("nvs set %s -> %s (valor no mostrado). Reiniciar para aplicar.\n",
-                              clave.c_str(), ok ? "OK" : "RECHAZADO");
+                Serial.printf("nvs set %s -> %s (valor no mostrado). Reiniciar para aplicar", clave.c_str(),
+                              ok ? "OK" : "RECHAZADO");
+                Serial.println(clave == "mqtt_token" ? "; el token se aplica sin reiniciar." : ".");
+                if (ok && clave == "mqtt_token") g_revisarTokenYa = true;
             } else if (accion == "borrar") {
                 Serial.printf("nvs borrar %s -> %s\n", args.c_str(), borrarClaveNvs(args) ? "OK" : "RECHAZADO");
             } else {
@@ -344,6 +348,18 @@ static void publicarEventosPendientes() {
     }
 }
 
+/// HU-44 esc. 2: relee el token de NVS; si cambió (rotación o revocación
+/// aplicada por el administrador), cierra con DISCONNECT ordenado y reconecta
+/// con la credencial nueva SIN reiniciar: boot_id, seq_no y buffer siguen.
+static void revisarRotacionToken() {
+    const String nuevo = releerTokenMqtt();
+    if (nuevo == mqtt.token() || nuevo.isEmpty()) return;
+    LOG_I("Red", "Token MQTT rotado en NVS: reconexion ordenada sin reiniciar (HU-44).");
+    mqtt.desconectarOrdenadamente();  // DISCONNECT limpio: no dispara el LWT
+    mqtt.actualizarToken(nuevo);
+    encolarEvento("credencial_rotada", "");
+}
+
 static void taskRed(void*) {
     suscribirTareaAlWatchdog("Red");
     static TransmisorMQTT transmisor(mqtt, g_config.deviceId);
@@ -351,6 +367,7 @@ static void taskRed(void*) {
     uint32_t ultimoDrenajeMs = 0;
     bool drenajeEnEspera = false;
     bool sesionAnunciada = false;
+    uint32_t ultimaRevisionTokenMs = millis();
     wifi.configurar(g_config.wifiSsid, g_config.wifiPassword);
     wifi.begin();
 
@@ -433,6 +450,13 @@ static void taskRed(void*) {
                 LOG_I("Red", "%d lectura(s) con acuse logico; quedan %lu.", r.confirmados,
                       (unsigned long)buffer.pendientes());
             }
+        }
+
+        // HU-44: rotación/revocación del token sin reiniciar.
+        if (g_revisarTokenYa || millis() - ultimaRevisionTokenMs >= 300000UL) {
+            g_revisarTokenYa = false;
+            ultimaRevisionTokenMs = millis();
+            revisarRotacionToken();
         }
         delay(50);
     }
