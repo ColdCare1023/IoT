@@ -332,6 +332,28 @@ static void revisarAvisosBuffer() {
     }
 }
 
+/// HU-48: latido cada 5 min con el estado del buffer (datos pendientes,
+/// pérdidas) y del enlace, para que el dashboard muestre la completitud del
+/// registro. También sirve de evidencia de RSSI para el protocolo C-5.
+static void publicarEstadoNodo(uint32_t pubacksSinAck) {
+    core::EstadoPerdidas p = buffer.perdidas();
+    core::ObjetoJSON d;
+    d.sinSigno("pendientes", buffer.pendientes());
+    d.sinSigno("ocupacion_pct", buffer.ocupacionPct());
+    d.sinSigno("capacidad", buffer.capacidad());
+    d.sinSigno("perdidas_total", p.total);
+    d.sinSigno("cuarentena", buffer.cuarentenados());
+    d.sinSigno("ultimo_seq_no", g_seqNo);
+    d.entero("rssi_dbm", wifi.rssi());
+    d.sinSigno("heap_libre", ESP.getFreeHeap());
+    d.sinSigno("heap_minimo", ESP.getMinFreeHeap());
+    d.sinSigno("intervalo_s", g_config.intervaloMuestreoS);
+    d.sinSigno("pubacks_sin_ack", pubacksSinAck);
+    d.sinSigno("eventos_descartados", eventosDescartados());
+    d.booleano("reloj_sntp", relojSincronizado());
+    publicarEventoDirecto("estado_nodo", d.cerrar());
+}
+
 static void publicarEventosPendientes() {
     EventoPendiente e;
     int publicados = 0;
@@ -368,6 +390,7 @@ static void taskRed(void*) {
     bool drenajeEnEspera = false;
     bool sesionAnunciada = false;
     uint32_t ultimaRevisionTokenMs = millis();
+    uint32_t ultimoEstadoMs = millis();
     wifi.configurar(g_config.wifiSsid, g_config.wifiPassword);
     wifi.begin();
 
@@ -450,6 +473,12 @@ static void taskRed(void*) {
                 LOG_I("Red", "%d lectura(s) con acuse logico; quedan %lu.", r.confirmados,
                       (unsigned long)buffer.pendientes());
             }
+        }
+
+        // HU-48: latido de estado (pendientes, pérdidas, enlace).
+        if (millis() - ultimoEstadoMs >= INTERVALO_ESTADO_MS) {
+            ultimoEstadoMs = millis();
+            publicarEstadoNodo(transmisor.pubacksSinAck());
         }
 
         // HU-44: rotación/revocación del token sin reiniciar.
