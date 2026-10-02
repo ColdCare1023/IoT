@@ -68,7 +68,7 @@ Cada decisión indica el requisito que la motiva y lo que se sacrifica.
   lecturas falsas.
 - **Decisión.** No hay lectura analógica. La continuidad se evidencia por la secuencia ininterrumpida
   `boot_id`/`seq_no` durante el corte (lo verifica el analizador de ensayos de QA a partir de las líneas `[BOOT]`/`[CAP]`).
-  Opcional: entrada **digital** GPIO 27 que ve el 5 V del adaptador **antes** del UPS →
+  Opcional: entrada **digital** GPIO 26 que ve el 5 V del adaptador **antes** del UPS →
   `power_source` y eventos de conmutación; el aviso de autonomía crítica es una **estimación** a partir
   de la autonomía medida en el ensayo C-6.
 

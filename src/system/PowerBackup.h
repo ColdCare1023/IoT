@@ -23,7 +23,7 @@
  * SENSADO DIGITAL OPCIONAL (SENSADO_ENERGIA_INSTALADO=1)
  * -----------------------------------------------------
  * Un divisor 10 kΩ/20 kΩ desde el 5 V del adaptador de pared (ANTES del Mini
- * UPS) lleva ~3,3 V a GPIO 27: HIGH = hay red comercial, LOW = el nodo corre
+ * UPS) lleva ~3,3 V a GPIO 26: HIGH = hay red comercial, LOW = el nodo corre
  * con el respaldo. Con esto cada lectura lleva power_source = "mains"/"backup"
  * y se registran los eventos de conmutación con su timestamp (HU-52 esc. 1).
  * El aviso de autonomía crítica (esc. 3) es una ESTIMACIÓN a partir de la

@@ -45,7 +45,7 @@
 #define SHT31_DIRECCION 0x44
 #define PIN_MC38      27   // reed switch a GND, pull-up INTERNO (no es pin de strapping)
 #define PIN_BOTON_DEMO 0   // botón BOOT de la placa; solo se usa en el entorno `demo`
-#define PIN_SENSADO_ENERGIA 27  // opcional: divisor desde el adaptador de 5 V ANTES del Mini UPS
+#define PIN_SENSADO_ENERGIA 26  // opcional: divisor desde el adaptador de 5 V ANTES del Mini UPS
 
 // ¿Hay MC-38 instalado en este nodo? Sin él, door_open = null (HU-04 esc. 4).
 #ifndef MC38_INSTALADO
@@ -56,7 +56,7 @@
 // GPIO 34 se eliminaron: con el Mini UPS Forza no existe una señal de nivel
 // que medir y la entrada flotante producía valores falsos. La continuidad se
 // demuestra por la secuencia ininterrumpida boot_id/seq_no durante el corte.
-// Con =1 se usa una entrada DIGITAL (GPIO 27) que ve el 5 V del adaptador de
+// Con =1 se usa una entrada DIGITAL (GPIO 26) que ve el 5 V del adaptador de
 // pared antes del Mini UPS → power_source = "mains"/"backup" en cada lectura.
 #ifndef SENSADO_ENERGIA_INSTALADO
   #define SENSADO_ENERGIA_INSTALADO 0

@@ -70,7 +70,7 @@ Otros comandos: `estado`, `rssi` (protocolo C-5), `ayuda`.
 | DS18B20 DQ | 4 | pull-up externo 4,7 kΩ a 3V3, 3 hilos |
 | SHT31 SDA / SCL | 21 / 22 | dirección 0x44 |
 | MC-38 | 27 | pull-up interno, contacto a GND |
-| Sensado de red (opcional) | 27 | divisor 10 kΩ/18 kΩ desde el 5 V anterior al UPS |
+| Sensado de red (opcional) | 26 | divisor 10 kΩ/18 kΩ desde el 5 V anterior al UPS |
 | Botón demo | 0 (BOOT) | solo firmware `demo` |
 
 ## Build flags por nodo
@@ -79,7 +79,7 @@ Otros comandos: `estado`, `rssi` (protocolo C-5), `ayuda`.
 |---|---|---|
 | `DEVICE_ID` | `ESP32_FARMACIA_01` | Identidad (NVS `device_id` la reemplaza) |
 | `MC38_INSTALADO` | `1` | `0` sin sensor de puerta |
-| `SENSADO_ENERGIA_INSTALADO` | `0` | `1` con el divisor a GPIO 27 |
+| `SENSADO_ENERGIA_INSTALADO` | `0` | `1` con el divisor a GPIO 26 |
 | `AUTONOMIA_RESPALDO_MEDIDA_MIN` | `0` | Autonomía medida en el ensayo C-6 |
 | `BUFFER_MAX_SEGMENTOS` | `300` | Reducir solo para pruebas de saturación |
 | `LOG_NIVEL_INFO` | `1` | `0` silencia `LOG_I` (`[CAP]` y `[BOOT]` se mantienen) |
