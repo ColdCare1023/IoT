@@ -100,7 +100,7 @@ void MQTTManager::desconectarOrdenadamente() {
 
 void MQTTManager::actualizarToken(const String& token) {
     _token = token;
-    _aprovisionado = core::credencialValida(std::string(_host.c_str())) &&
+    _aprovisionado = core::hostMqttValido(std::string(_host.c_str())) &&
                      core::credencialValida(std::string(token.c_str()));
 }
 
