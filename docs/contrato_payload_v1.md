@@ -112,6 +112,7 @@ Se aceptan también `estado` y los valores `commit_confirmado` / `duplicado` / `
 | `registros_en_cuarentena` | `corruptos`, `rechazados_backend`, `invalidos`, `cuarentena_total` | HU-06 esc. 2 |
 | `wifi_reconexion_prolongada` | `intentos_fallidos`, `duracion_s`, `umbral_intentos` | HU-08 esc. 3 |
 | `credencial_rotada` | — | HU-44 esc. 2 |
+| `puerta` | `door_open` (true = abierta); `occurred_at` es la hora del cambio | HU-04 esc. 1 |
 | `conmutacion_respaldo` / `suministro_restablecido` | `desde`/`hacia` · `duracion_respaldo_s` | HU-52 esc. 1 (solo con sensado) |
 | `respaldo_autonomia_critica` | `transcurrido_s`, `autonomia_medida_min`, `base` | HU-52 esc. 3 (estimación) |
 | `estado_nodo` (cada 5 min) | `pendientes`, `ocupacion_pct`, `capacidad`, `perdidas_total`, `cuarentena`, `ultimo_seq_no`, `rssi_dbm`, `heap_libre`, `heap_minimo`, `intervalo_s`, `pubacks_sin_ack`, `eventos_descartados`, `reloj_sntp` | HU-48 esc. 1, C-5 |

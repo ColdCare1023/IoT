@@ -8,7 +8,7 @@
 /**
  * MC-38 — reed switch de puerta, OPCIONAL (HU-04).
  *
- * Contacto seco entre GPIO 15 y GND, con el pull-up interno del ESP32:
+ * Contacto seco entre GPIO 27 y GND, con el pull-up interno del ESP32:
  *   LOW  = imán presente  = puerta CERRADA
  *   HIGH = imán ausente   = puerta ABIERTA
  *
@@ -25,7 +25,8 @@ class MC38Sensor {
 public:
     explicit MC38Sensor(uint8_t pin);
     void begin();
-    void poll();
+    /// Devuelve true si el estado estable de la puerta cambió en esta muestra.
+    bool poll();
 
     bool abierta() const;
     bool huboApertura() const;

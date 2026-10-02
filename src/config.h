@@ -43,7 +43,7 @@
 #define PIN_I2C_SDA   21   // SHT31
 #define PIN_I2C_SCL   22   // SHT31
 #define SHT31_DIRECCION 0x44
-#define PIN_MC38      15   // reed switch a GND, pull-up INTERNO (strapping: ver OE2.I2)
+#define PIN_MC38      27   // reed switch a GND, pull-up INTERNO (no es pin de strapping)
 #define PIN_BOTON_DEMO 0   // botón BOOT de la placa; solo se usa en el entorno `demo`
 #define PIN_SENSADO_ENERGIA 27  // opcional: divisor desde el adaptador de 5 V ANTES del Mini UPS
 

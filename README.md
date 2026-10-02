@@ -69,7 +69,7 @@ Otros comandos: `estado`, `rssi` (protocolo C-5), `ayuda`.
 |---|---|---|
 | DS18B20 DQ | 4 | pull-up externo 4,7 kΩ a 3V3, 3 hilos |
 | SHT31 SDA / SCL | 21 / 22 | dirección 0x44 |
-| MC-38 | 15 | pull-up interno, contacto a GND |
+| MC-38 | 27 | pull-up interno, contacto a GND |
 | Sensado de red (opcional) | 27 | divisor 10 kΩ/18 kΩ desde el 5 V anterior al UPS |
 | Botón demo | 0 (BOOT) | solo firmware `demo` |
 

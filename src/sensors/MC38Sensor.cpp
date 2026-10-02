@@ -11,11 +11,13 @@ void MC38Sensor::begin() {
     LOG_I("MC38", "GPIO%d, estado inicial: %s.", _pin, abiertaAhora ? "ABIERTA" : "cerrada");
 }
 
-void MC38Sensor::poll() {
+bool MC38Sensor::poll() {
     const bool cruda = digitalRead(_pin) == HIGH;
     if (_antirrebote.muestrear(cruda, (uint32_t)millis())) {
         LOG_I("MC38", "Puerta %s.", _antirrebote.estaAbierta() ? "ABIERTA" : "cerrada");
+        return true;
     }
+    return false;
 }
 
 bool MC38Sensor::abierta() const { return _antirrebote.estaAbierta(); }

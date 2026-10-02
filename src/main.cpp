@@ -227,7 +227,14 @@ static void taskCaptura(void*) {
             if (faltan <= (int32_t)paso) break;
             vTaskDelay(paso);
 #if MC38_INSTALADO
-            mc38.poll();  // antirrebote de 50 ms: requiere muestras frecuentes
+            // HU-04 esc. 1: cada cambio estable de la puerta queda registrado
+            // con su propio timestamp (evento "puerta"), además del resumen
+            // por ventana que viaja en la telemetría.
+            if (mc38.poll()) {
+                core::ObjetoJSON d;
+                d.booleano("door_open", mc38.abierta());
+                encolarEvento("puerta", d.cerrar());
+            }
 #endif
             muestrearEnergia();  // conmutación a respaldo con timestamp (HU-52 esc. 1)
 #if MODO_DEMO
