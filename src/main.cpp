@@ -391,8 +391,16 @@ static void revisarAvisosBuffer() {
         encolarEvento("buffer_80", d.cerrar());
         LOG_E("Buffer", "Ocupacion %u%% (umbral de aviso %u%%).", pct, BUFFER_UMBRAL_AVISO_PCT);
     }
+    // El estado de pérdidas cambia con CADA muestra no almacenada. Se reporta
+    // al abrir el episodio, al cerrarlo y, mientras siga abierto, como mucho
+    // cada 10 min: si no, un nodo saturado inundaría la cola de eventos.
+    static bool reportadoAbierto = false;
+    static uint32_t ultimoReporteMs = 0;
     core::EstadoPerdidas p;
     if (buffer.consumirAvisoPerdidas(p)) {
+        if (p.episodioAbierto && reportadoAbierto && millis() - ultimoReporteMs < 600000UL) return;
+        reportadoAbierto = p.episodioAbierto;
+        ultimoReporteMs = millis();
         core::ObjetoJSON d;
         d.sinSigno("perdidas_total", p.total);
         d.sinSigno("perdidas_episodio", p.episodio);
@@ -407,6 +415,9 @@ static void revisarAvisosBuffer() {
         else              d.nulo("hasta");
         d.cadena("causa", "buffer_lleno");
         encolarEvento("buffer_saturado", d.cerrar());
+        LOG_E("Buffer", "Muestras no almacenadas: total=%lu, episodio=%lu (%s), seq %lu a %lu.",
+              (unsigned long)p.total, (unsigned long)p.episodio, p.episodioAbierto ? "abierto" : "cerrado",
+              (unsigned long)p.desdeSeq, (unsigned long)p.hastaSeq);
     }
 }
 
@@ -475,6 +486,9 @@ static void taskRed(void*) {
     for (;;) {
         alimentarWatchdog();
         atenderConsola();
+        // Sin red también: el aviso del 80 % y la saturación quedan en el log
+        // local y encolados; se publican al volver la conexión.
+        revisarAvisosBuffer();
 
         uint32_t epochSync = 0;
         if (consumirAvisoSincronizacion(epochSync)) {
@@ -524,7 +538,6 @@ static void taskRed(void*) {
         }
         mqtt.loop();
 
-        revisarAvisosBuffer();
         publicarEventosPendientes();
 
         // HU-07: drenaje FIFO con acuse lógico. Si el backend no acusa, se
