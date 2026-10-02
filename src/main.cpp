@@ -504,6 +504,15 @@ static void taskRed(void*) {
         }
         arrancarSNTP();
 
+        // HU-44: rotación/revocación del token sin reiniciar. Va ANTES de
+        // conectar: un nodo rechazado por credencial revocada debe poder
+        // recoger el token nuevo sin tener una sesión activa.
+        if (g_revisarTokenYa || millis() - ultimaRevisionTokenMs >= 300000UL) {
+            g_revisarTokenYa = false;
+            ultimaRevisionTokenMs = millis();
+            revisarRotacionToken();
+        }
+
         // HU-09: canal MQTT sobre TLS con la CA validada. Sin CA o sin
         // credenciales, fallo cerrado: no hay alternativa en texto plano.
         if (!mqtt.conectado()) {
@@ -570,13 +579,6 @@ static void taskRed(void*) {
         if (millis() - ultimoEstadoMs >= INTERVALO_ESTADO_MS) {
             ultimoEstadoMs = millis();
             publicarEstadoNodo(transmisor.pubacksSinAck());
-        }
-
-        // HU-44: rotación/revocación del token sin reiniciar.
-        if (g_revisarTokenYa || millis() - ultimaRevisionTokenMs >= 300000UL) {
-            g_revisarTokenYa = false;
-            ultimaRevisionTokenMs = millis();
-            revisarRotacionToken();
         }
         delay(50);
     }

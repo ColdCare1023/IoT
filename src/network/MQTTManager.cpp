@@ -69,12 +69,13 @@ bool MQTTManager::conectar() {
     // Enfriamiento mínimo entre intentos: el handshake TLS es caro (RAM y
     // tiempo) y un broker que rechaza credenciales no cambia de opinión en 1 s.
     const uint32_t ahora = millis();
-    if (_ultimoIntentoMs != 0 && ahora - _ultimoIntentoMs < 5000) return false;
+    if (_ultimoIntentoMs != 0 && !_reintento.debeIntentar(ahora, _ultimoIntentoMs)) return false;
     _ultimoIntentoMs = ahora;
 
     LOG_I("MQTT", "Conectando a %s:%d como '%s'...", _host.c_str(), MQTT_PORT, _deviceId.c_str());
     if (!_mqtt.connect(_deviceId.c_str(), _deviceId.c_str(), _token.c_str())) {
         const int rc = (int)_mqtt.returnCode();
+        _reintento.registrarFallo();
         LOG_E("MQTT", "Conexion rechazada: lastError=%d returnCode=%d.", (int)_mqtt.lastError(), rc);
         if (rc == LWMQTT_BAD_USERNAME_OR_PASSWORD || rc == LWMQTT_NOT_AUTHORIZED) {
             LOG_E("MQTT", "  -> credencial invalida o revocada (HU-10/HU-44).");
@@ -83,6 +84,7 @@ bool MQTTManager::conectar() {
         }
         return false;
     }
+    _reintento.registrarExito();
     if (!_mqtt.subscribe(_topicoAck.c_str(), MQTT_QOS)) {
         LOG_E("MQTT", "No se pudo suscribir a %s: el buffer no se liberara.", _topicoAck.c_str());
     }
@@ -100,6 +102,8 @@ void MQTTManager::desconectarOrdenadamente() {
 
 void MQTTManager::actualizarToken(const String& token) {
     _token = token;
+    _reintento.registrarExito();  // credencial nueva: se reintenta de inmediato
+    _ultimoIntentoMs = 0;
     _aprovisionado = core::hostMqttValido(std::string(_host.c_str())) &&
                      core::credencialValida(std::string(token.c_str()));
 }

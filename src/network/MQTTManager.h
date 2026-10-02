@@ -9,6 +9,7 @@
 
 #include "../config.h"
 #include "../core/Ack.h"
+#include "../core/Backoff.h"
 
 /**
  * Cliente MQTT sobre TLS hacia EMQX Cloud Serverless (HU-09, HU-11, HU-13, HU-14).
@@ -85,6 +86,9 @@ private:
     bool _caCargada = false;
     bool _aprovisionado = false;
     uint32_t _ultimoIntentoMs = 0;
+    // Reintentos de conexión espaciados 5 s → 60 s: un broker caído o que
+    // rechaza la credencial no se martillea con un handshake TLS cada 5 s.
+    core::Backoff _reintento{5000, 60000, 2};
     uint32_t _acksIgnorados = 0;
 };
 
