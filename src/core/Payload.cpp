@@ -154,10 +154,11 @@ std::string serializarEvento(const std::string& deviceId, uint32_t bootId,
     return o.cerrar();
 }
 
-std::string serializarLWT(const std::string& deviceId) {
+std::string serializarLWT(const std::string& deviceId, uint32_t bootId) {
     ObjetoJSON o;
     o.cadena("schema_version", SCHEMA_VERSION_TELEMETRIA);
     o.cadena("device_id", deviceId);
+    o.sinSigno("boot_id", bootId);
     o.cadena("event_type", "lwt_offline");
     return o.cerrar();
 }

@@ -29,14 +29,15 @@ bool MQTTManager::_cargarCA() {
     return true;
 }
 
-void MQTTManager::configurar(const String& host, const String& deviceId, const String& token) {
+void MQTTManager::configurar(const String& host, const String& deviceId, const String& token,
+                             uint32_t bootId) {
     _host = host;
     _deviceId = deviceId;
     _token = token;
     _topicoLecturas = String(TOPICO_PREFIJO) + deviceId + "/lecturas";
     _topicoEventos = String(TOPICO_PREFIJO) + deviceId + "/eventos";
     _topicoAck = String(TOPICO_PREFIJO) + deviceId + "/ack";
-    _lwt = core::serializarLWT(std::string(deviceId.c_str()));
+    _lwt = core::serializarLWT(std::string(deviceId.c_str()), bootId);
 
     // HU-14: un host con esquema o puerto ("mqtt://…", "…:1883") se rechaza.
     _aprovisionado = core::hostMqttValido(std::string(host.c_str())) &&

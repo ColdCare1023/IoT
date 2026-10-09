@@ -613,7 +613,8 @@ void setup() {
         LOG_E("Setup", "LittleFS no montaba y se formateo: buffer vacio.");
     }
 
-    mqtt.configurar(g_config.mqttHost, g_config.deviceId, g_config.mqttToken);
+    // g_bootId ya está calculado (arriba): el LWT lleva el arranque de esta sesión (HU-13).
+    mqtt.configurar(g_config.mqttHost, g_config.deviceId, g_config.mqttToken, g_bootId);
     if (!g_config.credencialesCompletas()) {
         LOG_E("Setup", "Nodo SIN aprovisionar: captura y guarda en LittleFS, pero no publica. "
                        "Ver 'ayuda' en esta consola.");
