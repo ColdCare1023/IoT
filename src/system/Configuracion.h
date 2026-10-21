@@ -14,6 +14,7 @@
  *   wifi_ssid, wifi_pass, mqtt_host, mqtt_token  — credenciales
  *   device_id                                    — reemplaza DEVICE_ID (no en el firmware demo)
  *   intervalo_s                                  — intervalo de muestreo (10..3600)
+ *   svc_hash                                     — huella de la clave de servicio (IOT-002)
  *   boot_id                                      — contador de arranques
  *   perdidas                                     — contador persistente (blob)
  */
@@ -42,7 +43,11 @@ String releerTokenMqtt();
 uint32_t cargarEIncrementarBootId();
 
 /// Escritura desde la consola. Solo claves de la lista blanca.
+/// `clave_servicio` (IOT-002) se guarda solo como huella SHA-256.
 bool guardarClaveNvs(const String& clave, const String& valor);
 bool borrarClaveNvs(const String& clave);
+
+/// IOT-002: huella de la clave de servicio de la consola ("" si no hay).
+String huellaClaveServicio();
 
 #endif  // SYSTEM_CONFIGURACION_H

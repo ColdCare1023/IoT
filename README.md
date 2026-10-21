@@ -67,8 +67,15 @@ nvs set wifi_pass <clave>
 nvs set mqtt_host <xxxxxxxx.ala.us-east-1.emqxsl.com>
 nvs set mqtt_token <token del dispositivo>
 nvs set device_id ESP32_FARMACIA_01
+nvs set clave_servicio <clave de servicio de este nodo, 12+ caracteres>
 reiniciar
 ```
+
+IOT-002: con credenciales y clave de servicio, tras el reinicio la consola solo acepta `estado`, `rssi`
+y `ayuda`. Para mantenimiento: `desbloquear <clave_servicio>` (10 minutos; `bloquear` la cierra antes).
+Cinco claves erróneas seguidas imponen 10 minutos de espera. La clave se guarda solo como huella
+SHA-256, y cada cambio (`config_modificada`), desbloqueo y reinicio manual se publica como evento.
+Sin clave de servicio el nodo avisa en el arranque de que la consola sigue abierta.
 
 Otros comandos: `estado`, `rssi` (protocolo C-5), `ayuda`.
 

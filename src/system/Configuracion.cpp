@@ -3,6 +3,7 @@
 #include <Preferences.h>
 
 #include "../config.h"
+#include "../core/Consola.h"
 #include "../core/Credenciales.h"
 #include "../core/Identidad.h"
 #include "../core/Payload.h"
@@ -92,7 +93,27 @@ static bool esClaveTexto(const String& clave) {
     return false;
 }
 
+static const char* const CLAVE_HUELLA_SERVICIO = "svc_hash";
+
+String huellaClaveServicio() {
+    Preferences nvs;
+    if (!nvs.begin(NVS_NAMESPACE, true)) return String();
+    const String huella = nvs.getString(CLAVE_HUELLA_SERVICIO, "");
+    nvs.end();
+    return huella.length() == 64 ? huella : String();
+}
+
 bool guardarClaveNvs(const String& clave, const String& valor) {
+    if (clave == "clave_servicio") {
+        // IOT-002: nunca se guarda la clave, solo su huella.
+        if (!core::claveServicioAceptable(std::string(valor.c_str()))) return false;
+        const std::string huella = core::huellaClaveServicio(std::string(valor.c_str()));
+        Preferences nvs;
+        if (!nvs.begin(NVS_NAMESPACE, false)) return false;
+        const bool ok = nvs.putString(CLAVE_HUELLA_SERVICIO, huella.c_str()) == huella.size();
+        nvs.end();
+        return ok;
+    }
     if (clave == "intervalo_s") {
         const long s = valor.toInt();
         if (s < INTERVALO_MUESTREO_S_MIN || s > INTERVALO_MUESTREO_S_MAX) return false;
@@ -115,10 +136,11 @@ bool guardarClaveNvs(const String& clave, const String& valor) {
 }
 
 bool borrarClaveNvs(const String& clave) {
-    if (!esClaveTexto(clave) && clave != "intervalo_s") return false;
+    const bool esServicio = clave == "clave_servicio";
+    if (!esClaveTexto(clave) && clave != "intervalo_s" && !esServicio) return false;
     Preferences nvs;
     if (!nvs.begin(NVS_NAMESPACE, false)) return false;
-    const bool ok = nvs.remove(clave.c_str());
+    const bool ok = nvs.remove(esServicio ? CLAVE_HUELLA_SERVICIO : clave.c_str());
     nvs.end();
     return ok;
 }

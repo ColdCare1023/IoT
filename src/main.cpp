@@ -29,6 +29,7 @@
 
 #include "config.h"
 #include "core/Backoff.h"
+#include "core/Consola.h"
 #include "core/Json.h"
 #include "core/Payload.h"
 #include "core/Registro.h"
@@ -64,6 +65,15 @@ static WiFiManager wifi;
 static MQTTManager mqtt(tls);
 
 static volatile bool g_revisarTokenYa = false;
+
+// IOT-002: consola de escritura bloqueada en un nodo aprovisionado con clave
+// de servicio. La consola se atiende solo en la tarea de red.
+static core::EstadoConsola g_consola;
+static core::FrenoIntentos g_frenoConsola;
+static String g_huellaServicio;
+static bool g_aprovisionadoAlArrancar = false;
+
+static void publicarEventoDirecto(const char* tipo, const std::string& detalle);
 
 #if MODO_DEMO
 // Excursión SIMULADA para la demo/sustentación. Cada lectura afectada lleva
@@ -310,20 +320,55 @@ static void atenderConsola() {
         String resto = e1 < 0 ? String() : cmd.substring(e1 + 1);
         resto.trim();
 
+        // IOT-002: con la consola bloqueada solo se aceptan comandos de lectura.
+        const bool hayClave = !g_huellaServicio.isEmpty();
+        if (core::comandoModifica(std::string(verbo.c_str())) &&
+            g_consola.bloqueada(g_aprovisionadoAlArrancar, hayClave, millis())) {
+            Serial.println("Consola bloqueada: use 'desbloquear <clave_servicio>'.");
+            continue;
+        }
+
         if (verbo == "ayuda" || verbo == "help") {
             Serial.println("Comandos: estado | rssi | nvs set <clave> <valor> | nvs borrar <clave> | "
-                           "reiniciar"
+                           "reiniciar | desbloquear <clave_servicio> | bloquear"
 #if MODO_DEMO
                            " | demo excursion <temp_C> <n_lecturas>"
 #endif
             );
-            Serial.println("Claves NVS: wifi_ssid wifi_pass mqtt_host mqtt_token device_id intervalo_s");
+            Serial.println("Claves NVS: wifi_ssid wifi_pass mqtt_host mqtt_token device_id intervalo_s "
+                           "clave_servicio");
+        } else if (verbo == "desbloquear") {
+            if (!hayClave) {
+                Serial.println("Sin clave de servicio: la consola no esta bloqueada.");
+            } else if (!g_frenoConsola.puedeIntentar(millis())) {
+                Serial.println("Demasiados intentos fallidos: espere 10 minutos.");
+            } else if (core::claveServicioCorrecta(std::string(resto.c_str()),
+                                                   std::string(g_huellaServicio.c_str()))) {
+                g_frenoConsola.registrarAcierto();
+                g_consola.desbloquear(millis());
+                Serial.println("Consola desbloqueada durante 10 minutos ('bloquear' para cerrarla antes).");
+                encolarEvento("consola_desbloqueada", "");
+            } else {
+                g_frenoConsola.registrarFallo(millis());
+                Serial.println("Clave de servicio incorrecta.");
+                if (g_frenoConsola.fallos() == core::FrenoIntentos::MAX_INTENTOS) {
+                    core::ObjetoJSON d;
+                    d.sinSigno("intentos", g_frenoConsola.fallos());
+                    encolarEvento("consola_desbloqueo_fallido", d.cerrar());
+                }
+            }
+        } else if (verbo == "bloquear") {
+            g_consola.bloquear();
+            Serial.println(hayClave ? "Consola bloqueada." : "Sin clave de servicio: no hay bloqueo que aplicar.");
         } else if (verbo == "estado") {
             imprimirEstado();
         } else if (verbo == "rssi") {
             imprimirRssi();
         } else if (verbo == "reiniciar") {
             Serial.println("Reiniciando (DISCONNECT ordenado)...");
+            // IOT-002: el DISCONNECT ordenado no dispara el LWT; el reinicio
+            // manual se informa antes para que no pase desapercibido.
+            if (mqtt.conectado()) publicarEventoDirecto("reinicio_manual", "");
             mqtt.desconectarOrdenadamente();  // HU-13 esc. 2: no dispara el LWT
             delay(200);
             ESP.restart();
@@ -342,8 +387,24 @@ static void atenderConsola() {
                               ok ? "OK" : "RECHAZADO");
                 Serial.println(clave == "mqtt_token" ? "; el token se aplica sin reiniciar." : ".");
                 if (ok && clave == "mqtt_token") g_revisarTokenYa = true;
+                if (ok) {
+                    if (clave == "clave_servicio") g_huellaServicio = huellaClaveServicio();
+                    // IOT-002: el cambio se informa (qué clave, nunca el valor).
+                    core::ObjetoJSON d;
+                    d.cadena("clave", std::string(clave.c_str()));
+                    d.cadena("accion", "set");
+                    encolarEvento("config_modificada", d.cerrar());
+                }
             } else if (accion == "borrar") {
-                Serial.printf("nvs borrar %s -> %s\n", args.c_str(), borrarClaveNvs(args) ? "OK" : "RECHAZADO");
+                const bool ok = borrarClaveNvs(args);
+                Serial.printf("nvs borrar %s -> %s\n", args.c_str(), ok ? "OK" : "RECHAZADO");
+                if (ok) {
+                    if (args == "clave_servicio") g_huellaServicio = String();
+                    core::ObjetoJSON d;
+                    d.cadena("clave", std::string(args.c_str()));
+                    d.cadena("accion", "borrar");
+                    encolarEvento("config_modificada", d.cerrar());
+                }
             } else {
                 Serial.println("Uso: nvs set <clave> <valor> | nvs borrar <clave>");
             }
@@ -616,6 +677,15 @@ void setup() {
 
     // IOT-005: con la identidad bloqueada no se entrega token al cliente MQTT:
     // queda "no aprovisionado" (fallo cerrado) y las lecturas siguen en LittleFS.
+    // IOT-002: la consola de escritura se bloquea en un nodo aprovisionado
+    // con clave de servicio.
+    g_huellaServicio = huellaClaveServicio();
+    g_aprovisionadoAlArrancar = g_config.credencialesCompletas();
+    if (g_aprovisionadoAlArrancar && g_huellaServicio.isEmpty()) {
+        LOG_E("Setup", "Consola de escritura ABIERTA: defina 'nvs set clave_servicio <clave>' para "
+                       "bloquearla en este nodo aprovisionado.");
+    }
+
     mqtt.configurar(g_config.mqttHost, g_config.deviceId,
                     g_config.identidadBloqueada ? String() : g_config.mqttToken);
     if (g_config.identidadBloqueada) {
@@ -645,6 +715,7 @@ void setup() {
         d.booleano("mc38_instalado", MC38_INSTALADO != 0);
         d.booleano("sensado_energia", SENSADO_ENERGIA_INSTALADO != 0);
         d.booleano("fs_formateado", formateado);
+        d.booleano("consola_protegida", g_aprovisionadoAlArrancar && !g_huellaServicio.isEmpty());
         d.sinSigno("pendientes_recuperados", informe.pendientes);
         d.sinSigno("segmentos_con_cola_parcial", informe.segmentosConColaParcial);
         d.sinSigno("bytes_parciales_ignorados", informe.bytesParcialesIgnorados);
