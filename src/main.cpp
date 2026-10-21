@@ -463,6 +463,7 @@ static void publicarEventosPendientes() {
 /// aplicada por el administrador), cierra con DISCONNECT ordenado y reconecta
 /// con la credencial nueva SIN reiniciar: boot_id, seq_no y buffer siguen.
 static void revisarRotacionToken() {
+    if (g_config.identidadBloqueada) return;  // IOT-005: nunca se entrega un token
     const String nuevo = releerTokenMqtt();
     if (nuevo == mqtt.token() || nuevo.isEmpty()) return;
     LOG_I("Red", "Token MQTT rotado en NVS: reconexion ordenada sin reiniciar (HU-44).");
@@ -613,8 +614,14 @@ void setup() {
         LOG_E("Setup", "LittleFS no montaba y se formateo: buffer vacio.");
     }
 
-    mqtt.configurar(g_config.mqttHost, g_config.deviceId, g_config.mqttToken);
-    if (!g_config.credencialesCompletas()) {
+    // IOT-005: con la identidad bloqueada no se entrega token al cliente MQTT:
+    // queda "no aprovisionado" (fallo cerrado) y las lecturas siguen en LittleFS.
+    mqtt.configurar(g_config.mqttHost, g_config.deviceId,
+                    g_config.identidadBloqueada ? String() : g_config.mqttToken);
+    if (g_config.identidadBloqueada) {
+        LOG_E("Setup", "FIRMWARE DEMO sobre un nodo con device_id productivo en NVS: NO se publica. "
+                       "Instale el firmware de produccion o use una placa de demostracion.");
+    } else if (!g_config.credencialesCompletas()) {
         LOG_E("Setup", "Nodo SIN aprovisionar: captura y guarda en LittleFS, pero no publica. "
                        "Ver 'ayuda' en esta consola.");
     }

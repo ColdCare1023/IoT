@@ -17,6 +17,7 @@ void run_tests_cola(void);
 void run_tests_antirrebote(void);
 void run_tests_backoff(void);
 void run_tests_credenciales(void);
+void run_tests_identidad(void);
 
 int main(int, char**) {
     UNITY_BEGIN();
@@ -28,5 +29,6 @@ int main(int, char**) {
     run_tests_antirrebote();
     run_tests_backoff();
     run_tests_credenciales();
+    run_tests_identidad();
     return UNITY_END();
 }

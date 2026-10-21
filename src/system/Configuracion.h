@@ -12,7 +12,7 @@
  *
  * Claves NVS (namespace "thermotrace"):
  *   wifi_ssid, wifi_pass, mqtt_host, mqtt_token  — credenciales
- *   device_id                                    — reemplaza DEVICE_ID
+ *   device_id                                    — reemplaza DEVICE_ID (no en el firmware demo)
  *   intervalo_s                                  — intervalo de muestreo (10..3600)
  *   boot_id                                      — contador de arranques
  *   perdidas                                     — contador persistente (blob)
@@ -25,6 +25,9 @@ struct ConfiguracionNodo {
     String mqttToken;
     uint32_t intervaloMuestreoS = 30;
     String origen;  ///< de dónde salieron las credenciales (nunca los valores)
+    /// IOT-005: firmware demo sobre un nodo con identidad productiva en NVS.
+    /// El nodo captura pero NO publica (ver core/Identidad.h).
+    bool identidadBloqueada = false;
 
     bool credencialesCompletas() const;
 };

@@ -79,6 +79,11 @@ Cada decisión indica el requisito que la motiva y lo que se sacrifica.
 - **Decisión.** Entorno `demo` (`MODO_DEMO=1`, `device_id = ESP32_DEMO_01`): botón BOOT 1 s o comando
   `demo excursion 12.5 4`. Cada lectura afectada lleva `"simulated": true`. El código no existe en el
   binario de producción (`#if MODO_DEMO`). Alternativa sin hardware: `simulacion_excursiones/` en el repositorio ColdCare1023/Backend.
+- **IOT-005.** El firmware demo nunca hereda el `device_id` de NVS (usa siempre `ESP32_DEMO_01`). Si NVS
+  guarda un `device_id` distinto —el firmware demo se instaló sobre un nodo productivo aprovisionado—, la
+  identidad queda bloqueada: el nodo captura en LittleFS pero no entrega token al cliente MQTT ni
+  publica (`core::resolverIdentidad`, pruebas nativas). El backend además rechaza `simulated:true` de
+  dispositivos no marcados como demo (BE-015).
 
 ## ADR-09 · Dos tareas en el núcleo 1, captura con más prioridad
 

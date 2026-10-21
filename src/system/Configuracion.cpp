@@ -4,6 +4,7 @@
 
 #include "../config.h"
 #include "../core/Credenciales.h"
+#include "../core/Identidad.h"
 #include "../core/Payload.h"
 
 static const char* const CLAVES_TEXTO[] = {"wifi_ssid", "wifi_pass", "mqtt_host", "mqtt_token",
@@ -47,14 +48,18 @@ ConfiguracionNodo cargarConfiguracion() {
     c.mqttHost = elegir(nvs, hayNvs, "mqtt_host", MQTT_HOST, h);
     c.mqttToken = elegir(nvs, hayNvs, "mqtt_token", MQTT_TOKEN, t);
 
-    c.deviceId = DEVICE_ID;
     c.intervaloMuestreoS = INTERVALO_MUESTREO_S_DEFECTO;
+    String idNvs;
     if (hayNvs) {
-        const String id = nvs.getString("device_id", "");
-        if (core::deviceIdValido(std::string(id.c_str()))) c.deviceId = id;
+        idNvs = nvs.getString("device_id", "");
         c.intervaloMuestreoS = acotarIntervalo(nvs.getUInt("intervalo_s", INTERVALO_MUESTREO_S_DEFECTO));
         nvs.end();
     }
+    // IOT-005: el firmware demo nunca hereda la identidad productiva de NVS.
+    const core::Identidad identidad =
+        core::resolverIdentidad(DEVICE_ID, std::string(idNvs.c_str()), MODO_DEMO != 0);
+    c.deviceId = identidad.deviceId.c_str();
+    c.identidadBloqueada = identidad.bloqueada;
 
     if (a && h && t)        c.origen = "NVS";
     else if (!a && !h && !t) c.origen = "build_flags";
