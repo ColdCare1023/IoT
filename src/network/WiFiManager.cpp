@@ -19,6 +19,9 @@ void WiFiManager::begin() {
         LOG_E("WiFi", "Sin SSID aprovisionado: el nodo captura y guarda solo en modo offline.");
         return;
     }
+    // IOT-001: el core no guarda su propia copia de SSID y clave en NVS; la
+    // única copia es la del namespace del nodo (cifrado con NVS Encryption).
+    WiFi.persistent(false);
     WiFi.mode(WIFI_STA);
     WiFi.setAutoReconnect(false);  // la política de reintentos es nuestra (backoff)
     WiFi.setSleep(false);          // latencia estable para el acuse lógico

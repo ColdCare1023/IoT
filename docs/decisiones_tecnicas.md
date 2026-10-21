@@ -127,3 +127,27 @@ Cada decisión indica el requisito que la motiva y lo que se sacrifica.
 - **TLS.** El core compila mbedTLS sin `CONFIG_MBEDTLS_HAVE_TIME_DATE`: la vigencia de los certificados no
   se comprueba con el reloj, así que una hora manipulada no altera la validación del broker.
 - **Salida futura.** Fuente de tiempo autenticada (NTS o la hora del backend por el canal TLS).
+
+## ADR-13 · Firmware de producción endurecido (IOT-001)
+
+- **Contexto.** Con acceso físico al nodo, `esptool.py read_flash` volcaba el token MQTT, la clave Wi-Fi y
+  el buffer de lecturas en claro; también permitía grabar un firmware modificado o cambiar la CA de
+  LittleFS para redirigir el nodo a otro broker.
+- **Decisión.** Entorno `produccion` aparte (los de desarrollo no cambian) que recompila el framework con
+  `custom_sdkconfig` (`seguridad_produccion.sdkconfig`): Secure Boot v2 con firma **externa** (la clave
+  no pasa por la máquina de compilación), Flash Encryption *release*, NVS Encryption, modo de descarga
+  UART desactivado, tabla de particiones en `0x10000` (`partitions_produccion.csv`, LittleFS cifrada) y
+  CA del broker **embebida** en la imagen firmada (`scripts/embeber_ca.py`; sin CA no compila). El core
+  deja de guardar su propia copia de SSID y clave (`WiFi.persistent(false)`).
+- **Nombre del fragmento.** No puede llamarse `sdkconfig.produccion`: PlatformIO escribe ahí el
+  sdkconfig completo del entorno, lo sobrescribiría y la compilación híbrida entraría en bucle.
+- **Irreversible.** El primer arranque quema eFuses: procedimiento en `docs/seguridad_produccion.md`,
+  solo en ESP32 v3.0+ y primero en una placa de laboratorio.
+- **Verificado.** `pio run -e produccion` compila sin avisos del código propio (con una CA de
+  prueba). El sdkconfig generado confirma Secure Boot v2, verificación de firma en las actualizaciones
+  (`SECURE_SIGNED_ON_UPDATE`), Flash Encryption *release*, descarga UART desactivada, NVS Encryption,
+  anti-rollback y la tabla en `0x10000`; los binarios salen sin firmar. Sin `root_ca.pem` la compilación
+  se detiene. El aviso de `gen_esp32part` sobre el nombre `littlefs` es el mismo de desarrollo: la etiqueta
+  es la que monta el firmware.
+- **Pendiente en hardware.** Primer arranque con cifrado en sitio, montaje de LittleFS sobre la partición
+  cifrada y aprovisionamiento por consola con NVS Encryption.

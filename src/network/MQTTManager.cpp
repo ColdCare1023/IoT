@@ -2,6 +2,8 @@
 
 #include <LittleFS.h>
 
+#include "ca_embebida.h"
+
 #include "../core/Credenciales.h"
 #include "../core/Payload.h"
 #include "../system/Watchdog.h"
@@ -11,6 +13,15 @@ static_assert(MQTT_PORT == 8883, "HU-14: solo mqtts (TLS) en 8883; no hay fallba
 MQTTManager::MQTTManager(WiFiClientSecure& tls) : _tls(tls) {}
 
 bool MQTTManager::_cargarCA() {
+#if CA_EMBEBIDA
+    // IOT-001: la CA va dentro de la imagen (firmada con Secure Boot). La de
+    // LittleFS se ignora: un cambio en esa partición ya no redirige el nodo.
+    _tls.setCACert(ROOT_CA_PEM);
+    LOG_I("MQTT", "CA del broker embebida en el firmware.");
+    return true;
+#else
+    LOG_E("MQTT", "CA leida de LittleFS (reemplazable): en produccion debe embeberse (IOT-001).");
+#endif
     if (!LittleFS.exists(CERT_CA_ARCHIVO)) {
         LOG_E("MQTT", "Falta %s. Subir data/certs con 'pio run -t uploadfs' (ANTES de instalar: "
                       "borra el buffer).", CERT_CA_ARCHIVO);

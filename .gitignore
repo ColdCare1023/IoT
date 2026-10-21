@@ -4,4 +4,18 @@
 logs/
 data/certs/*.pem
 .DS_Store
-
+# IOT-001: generado por scripts/embeber_ca.py
+include/ca_embebida.h
+# Claves de firma y de cifrado: nunca en el repositorio
+*.key
+secure_boot_signing_key*.pem
+flash_encryption_key*.bin
+nvs_keys*.bin
+# Generados por la compilación híbrida de pioarduino (entorno produccion)
+sdkconfig.defaults
+sdkconfig.produccion
+sdkconfig.*.old
+.dummy/
+CMakeLists.txt
+dependencies.lock
+managed_components/

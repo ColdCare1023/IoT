@@ -15,3 +15,9 @@ pio run -e esp32dev -t uploadfs
 Sin este archivo el nodo **no conecta** (no existe fallback a texto plano ni
 `setInsecure()`): sigue capturando y guardando en LittleFS, y lo indica en el
 monitor serie.
+
+## Producción (IOT-001)
+
+En el entorno `produccion` el certificado se **embebe en la imagen firmada** (`scripts/embeber_ca.py`) y
+LittleFS ya no se consulta: no hace falta `uploadfs`. Si la actualización OTA (IOT-004) se descarga de un
+servidor con otra cadena, añadir su certificado raíz al mismo `root_ca.pem` (se admiten varios).

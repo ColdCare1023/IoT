@@ -1,0 +1,19 @@
+# Tabla de particiones de PRODUCCIÓN (IOT-001) — ESP32 DevKitC V4, 4 MB.
+#
+# Diferencias con partitions.csv (desarrollo):
+#   - La tabla va en 0x10000 (CONFIG_PARTITION_TABLE_OFFSET): el bootloader con
+#     Secure Boot v2 + Flash Encryption no cabe antes de 0x8000.
+#   - nvs_keys: claves XTS de NVS Encryption (siempre cifrada por Flash Encryption).
+#   - littlefs con `encrypted`: el buffer de lecturas se guarda cifrado. Validar el
+#     montaje de LittleFS sobre partición cifrada en una placa de laboratorio.
+#   - app y otadata se cifran siempre; nvs no admite la bandera (usa NVS Encryption).
+#
+#   app0/app1 1216 KB (OTA, IOT-004) · littlefs 1536 KB · 0x280000 + 0x180000 = 4 MB
+#
+# Name,     Type, SubType,  Offset,   Size,     Flags
+nvs,        data, nvs,      0x11000,  0x6000,
+nvs_keys,   data, nvs_keys, 0x17000,  0x1000,
+otadata,    data, ota,      0x18000,  0x2000,
+app0,       app,  ota_0,    0x20000,  0x130000,
+app1,       app,  ota_1,    0x150000, 0x130000,
+littlefs,   data, spiffs,   0x280000, 0x180000, encrypted

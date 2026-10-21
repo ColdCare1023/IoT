@@ -1,0 +1,34 @@
+# IOT-001 / IOT-004 — opciones de seguridad del firmware de PRODUCCIÓN.
+# Las usa el entorno `produccion` de platformio.ini (custom_sdkconfig).
+#
+# ATENCIÓN: al primer arranque de una imagen con estas opciones el propio
+# dispositivo QUEMA eFuses de forma IRREVERSIBLE (claves de cifrado, digest de
+# Secure Boot, desactivación del modo de descarga UART y de JTAG). Seguir
+# docs/seguridad_produccion.md y probar antes en una placa de laboratorio.
+
+# Secure Boot v2 (RSA-3072) exige ESP32 revisión v3.0 (ECO3) o superior.
+CONFIG_ESP32_REV_MIN_3=y
+CONFIG_SECURE_BOOT=y
+CONFIG_SECURE_BOOT_V2_ENABLED=y
+# Firma EXTERNA con espsecure: la clave privada nunca entra al repositorio ni a CI.
+# CONFIG_SECURE_BOOT_BUILD_SIGNED_BINARIES is not set
+
+# Flash Encryption en modo release: la flash solo se lee cifrada por USB.
+CONFIG_SECURE_FLASH_ENC_ENABLED=y
+CONFIG_SECURE_FLASH_ENCRYPTION_MODE_RELEASE=y
+# Modo de descarga UART desactivado de forma permanente (eFuse UART_DOWNLOAD_DIS).
+CONFIG_SECURE_DISABLE_ROM_DL_MODE=y
+
+# NVS Encryption (token MQTT, clave Wi-Fi, huella de la clave de servicio):
+# claves XTS en la partición nvs_keys, protegida por Flash Encryption.
+CONFIG_NVS_ENCRYPTION=y
+
+# El bootloader con Secure Boot + Flash Encryption no cabe antes de 0x8000.
+CONFIG_PARTITION_TABLE_OFFSET=0x10000
+CONFIG_BOOTLOADER_LOG_LEVEL_WARN=y
+
+# IOT-004: OTA con verificación (imagen nueva a prueba hasta confirmarse) y
+# anti-rollback por versión de seguridad en eFuse.
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+CONFIG_BOOTLOADER_APP_ANTI_ROLLBACK=y
+CONFIG_BOOTLOADER_APP_SECURE_VERSION=1
