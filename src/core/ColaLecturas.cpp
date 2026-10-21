@@ -391,4 +391,10 @@ ResumenDrenaje drenar(ColaLecturas& cola, Transmisor& transmisor, int maxPorCicl
     return r;
 }
 
+ResultadoEnvio resultadoDeAck(EstadoAck estado, bool huellaCoincide) {
+    if (estado == EstadoAck::Rechazado) return ResultadoEnvio::Rechazado;
+    if (!ackAutorizaLiberar(estado)) return ResultadoEnvio::Fallo;
+    return huellaCoincide ? ResultadoEnvio::Confirmado : ResultadoEnvio::Rechazado;
+}
+
 }  // namespace core

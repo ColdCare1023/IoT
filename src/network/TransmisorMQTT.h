@@ -16,7 +16,8 @@
  *      NUNCA se publica una estructura inválida — HU-05 esc. 3).
  *   3. Publica QoS 1 y espera el PUBACK.            ← NO libera nada
  *   4. Espera el acuse lógico del backend.          ← esto sí
- *        committed / duplicate → Confirmado (se libera)
+ *        committed / duplicate con la huella de lo publicado → Confirmado
+ *        committed / duplicate con otra huella → Rechazado (IOT-008)
  *        rejected              → Rechazado (cuarentena)
  *        timeout               → Fallo (se conserva; el reenvío es idempotente)
  */
@@ -27,11 +28,16 @@ public:
 
     uint32_t pubacksSinAck() const { return _pubacksSinAck; }
 
+    uint32_t acksConHuellaAjena() const { return _acksConHuellaAjena; }
+
 private:
-    static core::ResultadoEnvio _desdeAck(core::EstadoAck estado);
+    core::ResultadoEnvio _desdeAck(const core::RegistroLectura& r, core::EstadoAck estado,
+                                   const std::string& huella);
     MQTTManager& _mqtt;
     std::string _deviceId;
+    core::MemoriaEnvios _envios;  ///< IOT-008: huellas de lo publicado
     uint32_t _pubacksSinAck = 0;
+    uint32_t _acksConHuellaAjena = 0;
 };
 
 #endif  // TRANSMISOR_MQTT_H

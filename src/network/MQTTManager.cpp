@@ -120,12 +120,12 @@ MQTTManager::Publicacion MQTTManager::publicar(const String& topico, const std::
 }
 
 bool MQTTManager::esperarAck(uint32_t bootId, uint32_t seqNo, uint32_t timeoutMs,
-                             core::EstadoAck& estado) {
+                             core::EstadoAck& estado, std::string& huella) {
     const uint32_t inicio = millis();
     for (;;) {
         // Puede haber llegado ya durante el publish() (lwmqtt procesa
         // entrantes mientras espera el PUBACK).
-        if (_acks.buscar(bootId, seqNo, estado)) {
+        if (_acks.buscar(bootId, seqNo, estado, huella)) {
             _acks.olvidar(bootId, seqNo);
             return true;
         }
@@ -144,5 +144,5 @@ void MQTTManager::_alRecibir(String& topico, String& payload) {
         _acksIgnorados++;  // un acuse ambiguo o ajeno nunca libera nada
         return;
     }
-    _acks.anotar(ack.bootId, ack.seqNo, ack.estado);
+    _acks.anotar(ack.bootId, ack.seqNo, ack.estado, ack.contenidoSha256);
 }

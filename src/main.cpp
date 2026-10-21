@@ -485,7 +485,7 @@ static void revisarAvisosBuffer() {
 /// HU-48: latido cada 5 min con el estado del buffer (datos pendientes,
 /// pérdidas) y del enlace, para que el dashboard muestre la completitud del
 /// registro. También sirve de evidencia de RSSI para el protocolo C-5.
-static void publicarEstadoNodo(uint32_t pubacksSinAck) {
+static void publicarEstadoNodo(uint32_t pubacksSinAck, uint32_t acksHuellaAjena) {
     core::EstadoPerdidas p = buffer.perdidas();
     core::ObjetoJSON d;
     d.sinSigno("pendientes", buffer.pendientes());
@@ -499,6 +499,7 @@ static void publicarEstadoNodo(uint32_t pubacksSinAck) {
     d.sinSigno("heap_minimo", ESP.getMinFreeHeap());
     d.sinSigno("intervalo_s", g_config.intervaloMuestreoS);
     d.sinSigno("pubacks_sin_ack", pubacksSinAck);
+    d.sinSigno("acks_huella_ajena", acksHuellaAjena);  // IOT-008
     d.sinSigno("eventos_descartados", eventosDescartados());
     d.booleano("reloj_sntp", relojSincronizado());
     publicarEventoDirecto("estado_nodo", d.cerrar());
@@ -640,7 +641,7 @@ static void taskRed(void*) {
         // HU-48: latido de estado (pendientes, pérdidas, enlace).
         if (millis() - ultimoEstadoMs >= INTERVALO_ESTADO_MS) {
             ultimoEstadoMs = millis();
-            publicarEstadoNodo(transmisor.pubacksSinAck());
+            publicarEstadoNodo(transmisor.pubacksSinAck(), transmisor.acksConHuellaAjena());
         }
         delay(50);
     }

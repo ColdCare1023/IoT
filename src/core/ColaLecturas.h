@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "Ack.h"
 #include "Registro.h"
 
 namespace core {
@@ -198,6 +199,13 @@ enum class ResultadoEnvio {
     Fallo,        ///< sin PUBACK o sin acuse lógico a tiempo → conservar y parar
     SinConexion,  ///< sin sesión → conservar y parar
 };
+
+/**
+ * IOT-008: resultado de un acuse lógico. Un acuse que autoriza liberar pero
+ * cuya huella no corresponde a ningún JSON publicado por el nodo se trata
+ * como rechazo: el registro va a cuarentena y la copia local se conserva.
+ */
+ResultadoEnvio resultadoDeAck(EstadoAck estado, bool huellaCoincide);
 
 class Transmisor {
 public:

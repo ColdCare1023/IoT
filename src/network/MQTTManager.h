@@ -54,7 +54,8 @@ public:
     Publicacion publicar(const String& topico, const std::string& payload);
 
     /// Espera el acuse lógico de (boot_id, seq_no) bombeando loop().
-    bool esperarAck(uint32_t bootId, uint32_t seqNo, uint32_t timeoutMs, core::EstadoAck& estado);
+    bool esperarAck(uint32_t bootId, uint32_t seqNo, uint32_t timeoutMs, core::EstadoAck& estado,
+                    std::string& huella);
     core::MemoriaAcks& acks() { return _acks; }
 
     const String& topicoLecturas() const { return _topicoLecturas; }

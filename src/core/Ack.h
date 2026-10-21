@@ -28,6 +28,13 @@ namespace core {
  *
  * Por compatibilidad se aceptan también `estado` y los valores en español
  * (`commit_confirmado`, `duplicado`, `rechazado`).
+ *
+ * IOT-008: PRUEBA DE CONTENIDO. El acuse trae `content_sha256`, la huella de
+ * los bytes exactos que el backend recibió. Solo libera si coincide con la de
+ * un JSON que ESTE nodo publicó para ese (boot_id, seq_no) (`MemoriaEnvios`).
+ * Un acuse sin huella no se acepta; uno con huella ajena manda el registro a
+ * cuarentena: un acuse falso (ACL mal puesta, broker o backend comprometido)
+ * ya no basta para borrar la única copia de una lectura.
  */
 
 enum class EstadoAck : uint8_t { Confirmado, Duplicado, Rechazado, Desconocido };
@@ -37,6 +44,7 @@ struct AckLogico {
     uint32_t bootId = 0;
     uint32_t seqNo = 0;
     EstadoAck estado = EstadoAck::Desconocido;
+    std::string contenidoSha256;  ///< 64 hex en minúsculas
 };
 
 /// Parsea el cuerpo del acuse. Devuelve false si falta algún campo o el
@@ -47,6 +55,34 @@ bool parsearAck(const std::string& json, AckLogico& ack);
 inline bool ackAutorizaLiberar(EstadoAck estado) {
     return estado == EstadoAck::Confirmado || estado == EstadoAck::Duplicado;
 }
+
+/// ¿Es una huella SHA-256 en hexadecimal (64 caracteres en minúsculas)?
+bool huellaValida(const std::string& huella);
+
+/**
+ * IOT-008: huellas de los JSON publicados por (boot_id, seq_no). Un mismo
+ * registro puede reenviarse con otra base de tiempo (p. ej. tras sincronizar
+ * SNTP), así que se aceptan todas las versiones que el nodo envió; un acuse
+ * que no corresponde a ninguna no libera nada.
+ */
+class MemoriaEnvios {
+public:
+    static const size_t CAPACIDAD = 32;
+
+    void anotar(uint32_t bootId, uint32_t seqNo, const std::string& huella);
+    bool coincide(uint32_t bootId, uint32_t seqNo, const std::string& huella) const;
+    void limpiar();
+
+private:
+    struct Entrada {
+        uint32_t bootId = 0;
+        uint32_t seqNo = 0;
+        std::string huella;
+        bool usada = false;
+    };
+    Entrada _entradas[CAPACIDAD];
+    size_t _siguiente = 0;
+};
 
 /**
  * Memoria corta de acuses recibidos, indexada por (boot_id, seq_no).
@@ -61,8 +97,8 @@ class MemoriaAcks {
 public:
     static const size_t CAPACIDAD = 32;
 
-    void anotar(uint32_t bootId, uint32_t seqNo, EstadoAck estado);
-    bool buscar(uint32_t bootId, uint32_t seqNo, EstadoAck& estado) const;
+    void anotar(uint32_t bootId, uint32_t seqNo, EstadoAck estado, const std::string& huella);
+    bool buscar(uint32_t bootId, uint32_t seqNo, EstadoAck& estado, std::string& huella) const;
     void olvidar(uint32_t bootId, uint32_t seqNo);
     void limpiar();
 
@@ -71,6 +107,7 @@ private:
         uint32_t bootId = 0;
         uint32_t seqNo = 0;
         EstadoAck estado = EstadoAck::Desconocido;
+        std::string huella;
         bool usada = false;
     };
     Entrada _entradas[CAPACIDAD];

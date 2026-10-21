@@ -80,13 +80,20 @@ ACL sugerida en EMQX (HU-10): el usuario `<device_id>` solo puede **publicar** e
 Publicar **después** del `COMMIT` en PostgreSQL (nunca antes):
 
 ```json
-{"device_id": "ESP32_FARMACIA_01", "boot_id": 42, "seq_no": 1205, "status": "committed"}
+{"device_id": "ESP32_FARMACIA_01", "boot_id": 42, "seq_no": 1205, "status": "committed",
+ "content_sha256": "<SHA-256 en hex de los bytes exactos recibidos en .../lecturas>"}
 ```
+
+`content_sha256` (IOT-008) es **obligatorio**: un acuse sin él se ignora. El nodo solo libera el
+registro si la huella coincide con la de un JSON que él mismo publicó para ese `(boot_id, seq_no)`;
+si no coincide, el registro va a **cuarentena** (no se borra) y se cuenta en `acks_huella_ajena`
+de `estado_nodo`. Un conflicto de contenido (misma identidad, valores distintos) se acusa como
+`rejected` (BE-001), nunca como `duplicate`.
 
 | `status` | Cuándo | Efecto en el nodo |
 |---|---|---|
 | `committed` | la lectura quedó persistida | libera el registro de LittleFS |
-| `duplicate` | ya existía (reenvío) | libera el registro |
+| `duplicate` | ya existía con el mismo contenido (reenvío) | libera el registro |
 | `rejected` | rechazo **permanente** ya auditado (esquema, dispositivo no autorizado) | mueve el registro a **cuarentena** en LittleFS (no lo borra) y sigue con el FIFO |
 
 Sin acuse en 8 s el nodo **conserva** el registro y lo reenvía más tarde (con backoff).
@@ -119,7 +126,7 @@ Se aceptan también `estado` y los valores `commit_confirmado` / `duplicado` / `
 | `reinicio_manual` | — (se publica antes del DISCONNECT ordenado, que no dispara el LWT) | IOT-002 |
 | `consola_desbloqueada` | — (desbloqueo con la clave de servicio, 10 min) | IOT-002 |
 | `consola_desbloqueo_fallido` | `intentos` (fallos seguidos al activarse el freno) | IOT-002 |
-| `estado_nodo` (cada 5 min) | `pendientes`, `ocupacion_pct`, `capacidad`, `perdidas_total`, `cuarentena`, `ultimo_seq_no`, `rssi_dbm`, `heap_libre`, `heap_minimo`, `intervalo_s`, `pubacks_sin_ack`, `eventos_descartados`, `reloj_sntp` | HU-48 esc. 1, C-5 |
+| `estado_nodo` (cada 5 min) | `pendientes`, `ocupacion_pct`, `capacidad`, `perdidas_total`, `cuarentena`, `ultimo_seq_no`, `rssi_dbm`, `heap_libre`, `heap_minimo`, `intervalo_s`, `pubacks_sin_ack`, `acks_huella_ajena`, `eventos_descartados`, `reloj_sntp` | HU-48 esc. 1, C-5 |
 
 ## 4. Diferencias con el contrato que hoy valida el backend
 
