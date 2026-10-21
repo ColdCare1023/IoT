@@ -198,3 +198,22 @@ Cada decisión indica el requisito que la motiva y lo que se sacrifica.
   no, los nodos siguen con el token solo. La aplicación ocupa ya ~93 % (demo ~95 %) de su partición: la
   próxima funcionalidad grande obliga a revisar el reparto de la flash o recortar dependencias.
 - **Pendiente en hardware.** Generación de la clave y handshake mutuo contra el EMQX local.
+
+## ADR-16 · Integridad del buffer de lecturas: CRC32 + Flash Encryption, sin HMAC (IOT-009)
+
+- **Contexto.** Cada registro del buffer lleva un CRC32, que detecta errores accidentales pero no una
+  manipulación: con acceso a la flash se podía alterar una lectura pendiente y recalcular el CRC.
+- **Análisis.** Un HMAC por registro necesita una clave en el propio nodo. Sin Flash Encryption esa clave
+  se lee con la misma facilidad que el buffer, así que no añade protección; con Flash Encryption *release*
+  (ADR-13) la descarga UART y JTAG están desactivadas y la única vía es desoldar la memoria. Ahí, cambiar
+  un bloque cifrado produce 32 bytes pseudoaleatorios al descifrar, que el CRC32 rechaza (probabilidad de
+  pasar 2⁻³²) y el registro va a cuarentena; reponer un bloque cifrado antiguo de la misma dirección
+  devuelve una lectura ya enviada, con su `boot_id`/`seq_no` original, que el backend descarta como
+  duplicada, y la lectura sustituida aparece como hueco de secuencia. Ninguna de las dos altera la
+  evidencia sin dejar rastro. El canal ya está autenticado: TLS, token y certificado de cliente por nodo
+  (ADR-15), ACL por tópico y acuse con prueba de contenido (IOT-008).
+- **Decisión.** No se cambia el formato del registro (evita perder el buffer de los nodos en campo al
+  actualizar). La protección depende de que la flash esté cifrada, así que el nodo lo informa en cada
+  `arranque` (`flash_cifrada`, `arranque_seguro`) y en `estado`, y avisa en el log si no lo está.
+- **Salida futura.** Si el modelo de amenazas lo exige, firmar cada registro al capturarlo con la clave
+  del nodo de ADR-15 (ECDSA P-256) y verificar en el backend con su certificado.

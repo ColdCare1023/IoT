@@ -25,6 +25,8 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
+#include <esp_flash_encrypt.h>
+#include <esp_secure_boot.h>
 #include <esp_system.h>
 
 #include "config.h"
@@ -280,6 +282,8 @@ static void imprimirEstado() {
                   (unsigned long)wifi.retardoActualMs(), wifi.diagnosticoActivo() ? 1 : 0,
                   mqtt.conectado() ? "OK" : "NO", mqtt.caCargada() ? 1 : 0, mqtt.aprovisionado() ? 1 : 0,
                   mqtt.certificadoCliente() ? 1 : 0);
+    Serial.printf("flash_cifrada=%d arranque_seguro=%d\n", esp_flash_encryption_enabled() ? 1 : 0,
+                  esp_secure_boot_enabled() ? 1 : 0);
     Serial.printf("reloj=%s | buffer: pendientes=%lu/%lu ocupacion=%u%% libres=%luKB cuarentena=%lu\n",
                   relojSincronizado() ? "sntp_synced" : "unsynced", (unsigned long)buffer.pendientes(),
                   (unsigned long)buffer.capacidad(), (unsigned)buffer.ocupacionPct(),
@@ -827,6 +831,13 @@ void setup() {
         LOG_E("Setup", "LittleFS no montaba y se formateo: buffer vacio.");
     }
 
+    // IOT-009: sin Flash Encryption las lecturas pendientes pueden leerse y
+    // alterarse con acceso físico (su CRC32 solo detecta errores accidentales).
+    if (!esp_flash_encryption_enabled()) {
+        LOG_E("Setup", "Flash SIN cifrar (firmware de desarrollo): el buffer de lecturas no esta protegido "
+                       "frente a acceso fisico. En campo usar el entorno 'produccion'.");
+    }
+
     // IOT-004: ¿arranca una imagen recién instalada por OTA? ¿se revirtió una?
     g_imagenAPrueba = imagenEnPrueba();
     if (g_imagenAPrueba) {
@@ -892,6 +903,10 @@ void setup() {
         d.booleano("consola_protegida", g_aprovisionadoAlArrancar && !g_huellaServicio.isEmpty());
         d.cadena("particion", particionEnEjecucion());  // IOT-004
         d.booleano("certificado_cliente", mqtt.certificadoCliente());  // IOT-006
+        // IOT-009: el buffer de lecturas solo está protegido frente a acceso
+        // físico con la flash cifrada; el backend ve qué nodos no lo están.
+        d.booleano("flash_cifrada", esp_flash_encryption_enabled());
+        d.booleano("arranque_seguro", esp_secure_boot_enabled());
         d.booleano("imagen_a_prueba", g_imagenAPrueba);
         d.sinSigno("pendientes_recuperados", informe.pendientes);
         d.sinSigno("segmentos_con_cola_parcial", informe.segmentosConColaParcial);
