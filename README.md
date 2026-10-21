@@ -51,6 +51,14 @@ pio test -e native                   # pruebas (Windows sin MinGW: scripts\tests
 pio run -e demo -t upload            # SOLO para la demostración (ESP32_DEMO_01)
 ```
 
+Binario reproducible (IOT-010): plataforma, librerías y PlatformIO están fijados por versión exacta, y
+con `SOURCE_DATE_EPOCH` el mismo commit produce el mismo `firmware.bin`. CI publica el binario y su
+SHA-256 como artefacto; para verificar uno localmente:
+
+```bash
+SOURCE_DATE_EPOCH=$(git log -1 --format=%ct) pio run -e esp32dev && shasum -a 256 .pio/build/esp32dev/firmware.bin
+```
+
 Aprovisionamiento por consola serie (sin secretos en el repositorio; los valores nunca se imprimen):
 
 ```
