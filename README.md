@@ -1,7 +1,8 @@
 # ColdCare IoT — firmware del nodo Edge (ESP32)
 
 Nodo de monitoreo de la cadena de frío de medicamentos termolábiles: ESP32 DevKitC V4 + DS18B20 (interior) +
-SHT31 (ambiente) + MC-38 (puerta, opcional) + Mini UPS 5 V. PlatformIO, Arduino core 2.0.17 (ESP-IDF 4.4).
+SHT31 (ambiente) + MC-38 (puerta, opcional) + Mini UPS 5 V. PlatformIO, Arduino-ESP32 3.3.12 (ESP-IDF 5.5.5,
+plataforma pioarduino 55.03.312-1).
 Capa Edge — responsable: **Brenda Lucía Gamio Upiachihua**.
 
 La historia del repositorio tiene **un commit por historia de usuario** del Product Backlog; cada commit

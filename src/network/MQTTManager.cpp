@@ -45,8 +45,8 @@ void MQTTManager::configurar(const String& host, const String& deviceId, const S
         LOG_E("MQTT", "mqtt_host invalido: solo nombre de host, sin esquema ni puerto (TLS 8883 fijo).");
     }
 
-    // TLS: mbedTLS del ESP-IDF 4.4 negocia TLS 1.2 (no hay 1.0/1.1 al que
-    // degradar). La garantía que depende de nosotros es autenticar al
+    // TLS: mbedTLS 3 (ESP-IDF 5.5) negocia TLS 1.2; no existe 1.0/1.1 al que
+    // degradar. La garantía que depende de nosotros es autenticar al
     // servidor: CA + verificación del nombre (el host viaja en el SNI).
     _tls.setHandshakeTimeout(TLS_HANDSHAKE_TIMEOUT_MS / 1000);
     _tls.setTimeout(TLS_HANDSHAKE_TIMEOUT_MS / 1000);

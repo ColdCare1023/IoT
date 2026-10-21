@@ -4,15 +4,24 @@
 #include <esp_idf_version.h>
 #include <esp_task_wdt.h>
 
-// Implementado y verificado para ESP-IDF 4.4 (Arduino core 2.0.17, fijado en
-// platformio.ini). IDF 5 cambió la firma de esp_task_wdt_init: fallo de
-// compilación explícito en vez de un comportamiento no verificado.
-#if ESP_IDF_VERSION_MAJOR >= 5
-#error "TWDT: reescribir inicializarWatchdog() para IDF 5 (esp_task_wdt_config_t) y verificarlo."
+// IOT-003: implementado para ESP-IDF 5.x (Arduino-ESP32 3.x, fijado en
+// platformio.ini). La rama 4.4 está fuera de soporte; compilar con ella es un
+// error explícito en vez de un comportamiento no verificado.
+#if ESP_IDF_VERSION_MAJOR < 5
+#error "TWDT: esta implementacion requiere ESP-IDF 5.x (Arduino-ESP32 3.x)."
 #endif
 
 void inicializarWatchdog() {
-    const esp_err_t err = esp_task_wdt_init(WATCHDOG_TIMEOUT_S, /*panic=*/true);
+    // El core ya arranca el TWDT (CONFIG_ESP_TASK_WDT_INIT: 5 s, idle de la
+    // CPU0, panic). En IDF 4.4 esp_task_wdt_init() sobre un TWDT ya activo
+    // solo cambiaba plazo y panic; el equivalente en IDF 5 es reconfigurar,
+    // conservando la vigilancia del idle de la CPU0 que fija el core.
+    esp_task_wdt_config_t config = {};
+    config.timeout_ms = WATCHDOG_TIMEOUT_S * 1000u;
+    config.idle_core_mask = (1u << 0);
+    config.trigger_panic = true;
+    esp_err_t err = esp_task_wdt_reconfigure(&config);
+    if (err == ESP_ERR_INVALID_STATE) err = esp_task_wdt_init(&config);  // core sin TWDT iniciado
     if (err != ESP_OK) {
         LOG_E("WDT", "No se pudo configurar el watchdog (err=%d).", (int)err);
         return;

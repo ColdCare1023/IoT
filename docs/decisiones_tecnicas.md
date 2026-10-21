@@ -52,15 +52,16 @@ Cada decisión indica el requisito que la motiva y lo que se sacrifica.
 
 ## ADR-06 · MQTT 3.1.1 (desviación documentada respecto a "MQTT 5.0")
 
-- **Contexto.** El documento pide MQTT 5.0. El core Arduino fijado (2.0.17 / ESP-IDF 4.4) no incluye
-  cliente MQTT 5, y la librería con PUBACK verificable (`256dpi/MQTT`, lwmqtt) es 3.1.1.
+- **Contexto.** El documento pide MQTT 5.0. El core Arduino fijado no incluye cliente MQTT 5 compilado
+  (esp-mqtt sin `CONFIG_MQTT_PROTOCOL_5`), y la librería con PUBACK verificable (`256dpi/MQTT`, lwmqtt)
+  es 3.1.1.
 - **Decisión.** Mantener 3.1.1 sobre TLS 8883. EMQX Serverless acepta ambos.
 - **Qué se cumple igual.** TLS con validación de CA y hostname, sin fallback; QoS 1 con PUBACK; LWT;
   usuario = `device_id` + token; ACL por tópico en el broker; acuse lógico de aplicación.
 - **Qué cambia.** El rechazo de credenciales llega como código 3.1.1 `0x05 Not authorized` en vez de
   `0x87` (HU-10/HU-44 lo piden "cuando aplique"). Sin *reason strings* ni *user properties*.
-- **Salida futura.** Migrar a Arduino core 3.x (ESP-IDF 5.1+, `esp-mqtt` con `CONFIG_MQTT_PROTOCOL_5`),
-  reescribiendo `system/Watchdog.cpp` para la API de IDF 5 y revalidando todo en hardware.
+- **Salida futura.** Con el core ya en 3.x (ADR-11), pasar a `esp-mqtt` con `CONFIG_MQTT_PROTOCOL_5`
+  exige compilar el framework con `custom_sdkconfig` y revalidar el contrato de acuses en hardware.
 
 ## ADR-07 · Sin lectura ADC de batería (GPIO 34 eliminado)
 
@@ -91,3 +92,19 @@ Cada decisión indica el requisito que la motiva y lo que se sacrifica.
 - `MQTT_PORT` fijo en 8883: definirlo por build flag es un `#error`, y un `static_assert` en el cliente
   impide otro valor. `mqtt_host` solo acepta un nombre de host (sin `mqtt://`, sin `:1883`, sin ruta).
   Una configuración errónea deja al nodo sin conectar (y guardando en LittleFS), nunca en texto plano.
+
+## ADR-11 · Migración a Arduino-ESP32 3.x / ESP-IDF 5.5 (IOT-003)
+
+- **Contexto.** El firmware se fijó en Arduino core 2.0.17 (ESP-IDF 4.4) por estabilidad. Espressif
+  declaró el fin de vida de la rama 4.4 en julio de 2024 (AR2024-008): la pila Wi-Fi, mbedTLS, LwIP y
+  el bootloader del nodo dejaron de recibir parches de seguridad.
+- **Decisión.** Plataforma pioarduino `55.03.312-1` (Arduino-ESP32 3.3.12, ESP-IDF 5.5.5), fijada por
+  versión exacta. La plataforma oficial de PlatformIO no publica Arduino 3.x.
+- **Cambios de código.** Solo el watchdog: en IDF 5 el core ya inicializa el TWDT, así que
+  `inicializarWatchdog()` lo reconfigura (`esp_task_wdt_reconfigure`) con el mismo plazo, panic y
+  vigilancia del idle de la CPU0 que tenía en 4.4. `WiFiClientSecure`, LittleFS, SNTP y la librería
+  MQTT compilan sin cambios.
+- **Verificado.** Compilación de `esp32dev` y `demo` sin avisos y las 77 pruebas nativas.
+- **Pendiente en hardware.** Ensayo de duración en el banco (watchdog, reconexión TLS contra EMQX,
+  buffer LittleFS existente, consumo de RAM en el handshake). El ocupado de flash sube a ~89 % de la
+  partición de aplicación (1216 KB): hay margen, pero conviene vigilarlo antes de añadir OTA.

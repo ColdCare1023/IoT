@@ -26,8 +26,9 @@
  *  - Suscripción a `.../ack`: los acuses lógicos se guardan en `MemoriaAcks`.
  *
  * VERSIÓN DEL PROTOCOLO. La librería (256dpi/arduino-mqtt, lwmqtt) habla
- * MQTT 3.1.1; el core Arduino 2.0.17 (ESP-IDF 4.4) tampoco trae cliente
- * MQTT 5. EMQX Serverless acepta ambos. Lo que exige el backlog —TLS, QoS 1,
+ * MQTT 3.1.1. El core Arduino 3.x trae esp-mqtt, pero compilado sin
+ * CONFIG_MQTT_PROTOCOL_5 y sin el PUBACK verificable por mensaje que usa el
+ * buffer. EMQX Serverless acepta ambos. Lo que exige el backlog —TLS, QoS 1,
  * LWT, ACL por tópico, acuse lógico— se cumple igual; la diferencia visible es
  * el código de rechazo: 3.1.1 devuelve 0x05 "Not authorized" donde MQTT 5
  * devolvería 0x87. Ver docs/decisiones_tecnicas.md.
