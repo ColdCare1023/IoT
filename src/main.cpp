@@ -287,7 +287,7 @@ static void imprimirRssi() {
     }
     const long promedio = suma / n;
     Serial.printf("[C-5] SSID=%s canal=%d RSSI promedio=%ld dBm (min %d, max %d, n=%d) -> %s\n",
-                  WiFi.SSID().c_str(), WiFi.channel(), promedio, minimo, maximo, n,
+                  WiFi.SSID().c_str(), (int)WiFi.channel(), promedio, minimo, maximo, n,
                   promedio >= -65 ? "CONFORME (>= -65 dBm)" : "NO CONFORME (< -65 dBm)");
 }
 
