@@ -113,3 +113,17 @@ Cada decisión indica el requisito que la motiva y lo que se sacrifica.
 - **Pendiente en hardware.** Ensayo de duración en el banco (watchdog, reconexión TLS contra EMQX,
   buffer LittleFS existente, consumo de RAM en el handshake). El ocupado de flash sube a ~89 % de la
   partición de aplicación (1216 KB): hay margen, pero conviene vigilarlo antes de añadir OTA.
+
+## ADR-12 · Hora SNTP no autenticada (IOT-007)
+
+- **Contexto.** SNTP no está autenticado: un intermediario en la red del local puede responder otra hora y
+  desplazar `captured_at` de lecturas marcadas `sntp_synced`, dentro de la ventana que acepta el backend.
+- **Decisión en el nodo.** Dentro de un arranque, la relación época↔uptime solo cambia por la deriva del
+  oscilador (milisegundos por hora). Una sincronización posterior que la mueva más de 120 s, o una época
+  fuera de 2024–2100, se descarta y se conserva la base vigente (`core::evaluarSincronizacion`, pruebas
+  nativas). Los rechazos se cuentan en `estado_nodo.saltos_reloj_rechazados` y se registran en el log.
+- **Límite.** La primera sincronización de cada arranque no tiene referencia en el nodo; la contrasta el
+  backend con `received_at` y con la base de las lecturas previas del mismo arranque.
+- **TLS.** El core compila mbedTLS sin `CONFIG_MBEDTLS_HAVE_TIME_DATE`: la vigencia de los certificados no
+  se comprueba con el reloj, así que una hora manipulada no altera la validación del broker.
+- **Salida futura.** Fuente de tiempo autenticada (NTS o la hora del backend por el canal TLS).

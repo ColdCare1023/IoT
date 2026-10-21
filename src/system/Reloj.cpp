@@ -13,6 +13,8 @@ static uint32_t _bootId = 0;
 static bool _sntpArrancado = false;
 static volatile bool _avisoPendiente = false;
 static volatile uint32_t _ultimaEpoch = 0;
+static volatile uint32_t _saltosRechazados = 0;   // IOT-007
+static volatile bool _avisoSaltoPendiente = false;
 
 uint32_t uptimeSegundos() {
     return (uint32_t)(esp_timer_get_time() / 1000000LL);
@@ -20,13 +22,23 @@ uint32_t uptimeSegundos() {
 
 // Corre en la tarea de lwIP: nada de Serial ni de bloqueos aquí.
 static void alSincronizar(struct timeval* tv) {
-    if (tv == nullptr) return;
+    if (tv == nullptr || tv->tv_sec < 0) return;
     const uint32_t epoch = (uint32_t)tv->tv_sec;
-    if (epoch < core::EPOCH_MINIMA_VALIDA) return;
     const uint32_t uptime = uptimeSegundos();
     portENTER_CRITICAL(&_mux);
-    _base.fijar(_bootId, epoch, uptime);
+    // IOT-007: una sincronización que salta respecto de la base vigente de este
+    // arranque se descarta (la hora del sistema puede cambiar; la base que
+    // fecha las lecturas, no).
+    const core::DecisionSincronizacion decision =
+        core::evaluarSincronizacion(_base, _bootId, epoch, uptime);
+    if (decision == core::DecisionSincronizacion::Aceptar) _base.fijar(_bootId, epoch, uptime);
     portEXIT_CRITICAL(&_mux);
+    if (decision == core::DecisionSincronizacion::SaltoRechazado) {
+        _saltosRechazados = _saltosRechazados + 1;
+        _avisoSaltoPendiente = true;
+        return;
+    }
+    if (decision != core::DecisionSincronizacion::Aceptar) return;
     _ultimaEpoch = epoch;
     _avisoPendiente = true;
 }
@@ -65,5 +77,13 @@ bool consumirAvisoSincronizacion(uint32_t& epoch) {
     if (!_avisoPendiente) return false;
     _avisoPendiente = false;
     epoch = _ultimaEpoch;
+    return true;
+}
+
+uint32_t saltosRelojRechazados() { return _saltosRechazados; }
+
+bool consumirAvisoSaltoRechazado() {
+    if (!_avisoSaltoPendiente) return false;
+    _avisoSaltoPendiente = false;
     return true;
 }

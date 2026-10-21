@@ -502,6 +502,7 @@ static void publicarEstadoNodo(uint32_t pubacksSinAck, uint32_t acksHuellaAjena)
     d.sinSigno("acks_huella_ajena", acksHuellaAjena);  // IOT-008
     d.sinSigno("eventos_descartados", eventosDescartados());
     d.booleano("reloj_sntp", relojSincronizado());
+    d.sinSigno("saltos_reloj_rechazados", saltosRelojRechazados());  // IOT-007
     publicarEventoDirecto("estado_nodo", d.cerrar());
 }
 
@@ -556,6 +557,11 @@ static void taskRed(void*) {
         uint32_t epochSync = 0;
         if (consumirAvisoSincronizacion(epochSync)) {
             LOG_I("Reloj", "SNTP sincronizado: %s", core::formatearISO8601(epochSync).c_str());
+        }
+        if (consumirAvisoSaltoRechazado()) {
+            LOG_E("Reloj", "SNTP respondio una hora que salta mas de %lu s respecto de este arranque: "
+                           "descartada (total %lu).", (unsigned long)core::TOLERANCIA_SALTO_RELOJ_S,
+                  (unsigned long)saltosRelojRechazados());
         }
 
         // HU-08: backoff exponencial 1 s → 60 s; la captura sigue en la

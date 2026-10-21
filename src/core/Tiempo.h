@@ -46,6 +46,26 @@ struct BaseTiempo {
 /// Época mínima aceptada como "reloj real" (2024-01-01T00:00:00Z). Antes de
 /// SNTP el ESP32 arranca en 1970.
 static const uint32_t EPOCH_MINIMA_VALIDA = 1704067200u;
+/// Época máxima plausible (2100-01-01T00:00:00Z): una respuesta SNTP más allá
+/// es un error o una manipulación, no una hora.
+static const uint32_t EPOCH_MAXIMA_PLAUSIBLE = 4102444800u;
+
+/**
+ * IOT-007: SNTP no está autenticado. Un atacante en la red del local puede
+ * responder con otra hora y desplazar captured_at de lecturas marcadas como
+ * sincronizadas. Dentro de un mismo arranque la relación época↔uptime solo
+ * varía por la deriva del oscilador (milisegundos por hora), así que una
+ * sincronización posterior que la mueva más de la tolerancia se RECHAZA y se
+ * conserva la base vigente. La primera sincronización de cada arranque no
+ * tiene referencia en el nodo: la contrasta el backend con received_at.
+ */
+static const uint32_t TOLERANCIA_SALTO_RELOJ_S = 120;
+
+enum class DecisionSincronizacion : uint8_t { Aceptar, FueraDeRango, SaltoRechazado };
+
+DecisionSincronizacion evaluarSincronizacion(const BaseTiempo& vigente, uint32_t bootId, uint32_t epoch,
+                                             uint32_t uptimeS,
+                                             uint32_t toleranciaS = TOLERANCIA_SALTO_RELOJ_S);
 
 /// Resuelve la hora de una lectura. `epochCaptura` es 0 si no había SNTP al
 /// capturar. Devuelve la calidad y, si aplica, la época en `epochSalida`.

@@ -126,7 +126,7 @@ Se aceptan también `estado` y los valores `commit_confirmado` / `duplicado` / `
 | `reinicio_manual` | — (se publica antes del DISCONNECT ordenado, que no dispara el LWT) | IOT-002 |
 | `consola_desbloqueada` | — (desbloqueo con la clave de servicio, 10 min) | IOT-002 |
 | `consola_desbloqueo_fallido` | `intentos` (fallos seguidos al activarse el freno) | IOT-002 |
-| `estado_nodo` (cada 5 min) | `pendientes`, `ocupacion_pct`, `capacidad`, `perdidas_total`, `cuarentena`, `ultimo_seq_no`, `rssi_dbm`, `heap_libre`, `heap_minimo`, `intervalo_s`, `pubacks_sin_ack`, `acks_huella_ajena`, `eventos_descartados`, `reloj_sntp` | HU-48 esc. 1, C-5 |
+| `estado_nodo` (cada 5 min) | `pendientes`, `ocupacion_pct`, `capacidad`, `perdidas_total`, `cuarentena`, `ultimo_seq_no`, `rssi_dbm`, `heap_libre`, `heap_minimo`, `intervalo_s`, `pubacks_sin_ack`, `acks_huella_ajena`, `eventos_descartados`, `reloj_sntp`, `saltos_reloj_rechazados` | HU-48 esc. 1, C-5 |
 
 ## 4. Diferencias con el contrato que hoy valida el backend
 

@@ -58,4 +58,17 @@ std::string formatearISO8601(uint32_t epoch) {
     return std::string(buf);
 }
 
+DecisionSincronizacion evaluarSincronizacion(const BaseTiempo& vigente, uint32_t bootId, uint32_t epoch,
+                                             uint32_t uptimeS, uint32_t toleranciaS) {
+    if (epoch < EPOCH_MINIMA_VALIDA || epoch > EPOCH_MAXIMA_PLAUSIBLE) {
+        return DecisionSincronizacion::FueraDeRango;
+    }
+    if (!vigente.valida || vigente.bootId != bootId) return DecisionSincronizacion::Aceptar;
+    const int64_t nuevo = (int64_t)epoch - (int64_t)uptimeS;
+    const int64_t salto = nuevo - vigente.desplazamientoS;
+    const int64_t magnitud = salto < 0 ? -salto : salto;
+    return magnitud > (int64_t)toleranciaS ? DecisionSincronizacion::SaltoRechazado
+                                           : DecisionSincronizacion::Aceptar;
+}
+
 }  // namespace core

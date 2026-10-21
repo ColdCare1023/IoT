@@ -30,4 +30,9 @@ uint32_t epochAhora();
 /// true una vez tras cada sincronización (para registrarla en el log).
 bool consumirAvisoSincronizacion(uint32_t& epoch);
 
+/// IOT-007: sincronizaciones SNTP rechazadas por saltar respecto de la base
+/// vigente del arranque (ver core::evaluarSincronizacion).
+uint32_t saltosRelojRechazados();
+bool consumirAvisoSaltoRechazado();
+
 #endif  // SYSTEM_RELOJ_H
