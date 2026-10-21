@@ -64,6 +64,10 @@ public:
     const String& topicoAck() const { return _topicoAck; }
 
     bool caCargada() const { return _caCargada; }
+    /// IOT-006: certificado y clave de cliente (TLS mutuo). Se aplican en la
+    /// próxima conexión; el broker identifica al nodo por el CN del certificado.
+    void configurarCertificadoCliente(const String& certPem, const String& clavePem);
+    bool certificadoCliente() const { return !_certPem.isEmpty(); }
     /// CA de confianza (embebida o de LittleFS); también la usa la OTA (IOT-004).
     const char* caPem() const;
 
@@ -88,6 +92,8 @@ private:
     String _deviceId;
     String _token;
     String _caPem;  // setCACert guarda el PUNTERO: la cadena debe vivir siempre
+    String _certPem;   // ídem setCertificate / setPrivateKey (IOT-006)
+    String _clavePem;
     String _topicoLecturas;
     String _topicoEventos;
     String _topicoAck;

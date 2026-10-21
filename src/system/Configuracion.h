@@ -15,6 +15,8 @@
  *   device_id                                    — reemplaza DEVICE_ID (no en el firmware demo)
  *   intervalo_s                                  — intervalo de muestreo (10..3600)
  *   svc_hash                                     — huella de la clave de servicio (IOT-002)
+ *   mqtt_key, mqtt_cert                          — identidad TLS del nodo (IOT-006,
+ *                                                  system/CertificadoCliente.h)
  *   boot_id                                      — contador de arranques
  *   perdidas                                     — contador persistente (blob)
  */

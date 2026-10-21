@@ -174,3 +174,27 @@ Cada decisión indica el requisito que la motiva y lo que se sacrifica.
   y la imagen firmada de producción añade un bloque de firma de 4 KB.
 - **Pendiente en hardware.** Descarga real contra un servidor HTTPS, reinicio, confirmación y reversión
   forzada (imagen que no conecta) en una placa de laboratorio.
+
+## ADR-15 · Certificado de cliente por nodo (IOT-006)
+
+- **Contexto.** El token MQTT es un secreto portátil: copiado del nodo o de un registro, permite suplantar
+  al nodo desde cualquier equipo. BE-002 hizo efectiva la revocación y IOT-001 lo cifra en la NVS, pero no
+  lo liga al hardware.
+- **Decisión.** TLS mutuo opcional y gradual. El nodo genera una clave EC P-256 con mbedTLS (`tls csr`,
+  solo con la radio encendida para que el RNG sea aleatorio de verdad), la guarda en NVS y exporta solo la
+  CSR con `CN=<device_id>`. El certificado firmado por la CA de dispositivos se instala con
+  `tls certificado <base64>` y se valida antes de guardarlo: misma clave, un único CN igual al device_id y,
+  si declara usos extendidos, `clientAuth` (`src/tls/IdentidadTLS.cpp`). Al arrancar se vuelve a validar;
+  si no sirve, el nodo conecta sin él.
+- **Broker y backend.** EMQX pide certificado (`verify_peer`, sin exigirlo) y pasa el CN al webhook. El
+  backend sigue exigiendo el token (la revocación de BE-002 no cambia), rechaza un certificado de otro
+  dispositivo y, tras la primera conexión con certificado, deja de aceptar el token solo
+  (`devices.exige_certificado`). `BROKER_EXIGIR_CERTIFICADO` lo exige a todos.
+- **Verificado.** En el equipo de desarrollo, con la misma versión de mbedTLS del core (3.6.6): clave, CSR
+  aceptada por OpenSSL, firma con `infra-local/scripts/firmar_csr_nodo.sh` (CA EC y RSA) y validación de
+  certificado válido, sin usos extendidos, de servidor, de otro CN, de otra clave y con dos CN. Pruebas
+  nativas del paso base64 → PEM; `esp32dev` y `demo` compilan.
+- **Límites.** El plan Serverless de EMQX Cloud debe admitir TLS mutuo para que aplique en producción; si
+  no, los nodos siguen con el token solo. La aplicación ocupa ya ~93 % (demo ~95 %) de su partición: la
+  próxima funcionalidad grande obliga a revisar el reparto de la flash o recortar dependencias.
+- **Pendiente en hardware.** Generación de la clave y handshake mutuo contra el EMQX local.

@@ -113,7 +113,7 @@ Se aceptan también `estado` y los valores `commit_confirmado` / `duplicado` / `
 
 | `event_type` | `detail` | HU |
 |---|---|---|
-| `arranque` | `reset_reason`, `firmware_version`, `intervalo_s`, `fs_formateado`, `consola_protegida`, `particion`, `imagen_a_prueba`, `pendientes_recuperados`, `segmentos_con_cola_parcial`, `bytes_parciales_ignorados`, `cursor_reconstruido` | HU-06 esc. 2, QA |
+| `arranque` | `reset_reason`, `firmware_version`, `intervalo_s`, `fs_formateado`, `consola_protegida`, `particion`, `imagen_a_prueba`, `certificado_cliente`, `pendientes_recuperados`, `segmentos_con_cola_parcial`, `bytes_parciales_ignorados`, `cursor_reconstruido` | HU-06 esc. 2, QA |
 | `online` | `rssi_dbm`, `pendientes`, `firmware_version` | HU-13 esc. 3 |
 | `lwt_offline` | *(sin `detail`; lo publica el broker)* | HU-13 esc. 1 |
 | `buffer_80` | `ocupacion_pct`, `pendientes`, `capacidad` | HU-06 |
@@ -124,7 +124,7 @@ Se aceptan también `estado` y los valores `commit_confirmado` / `duplicado` / `
 | `puerta` | `door_open` (true = abierta); `occurred_at` es la hora del cambio | HU-04 esc. 1 |
 | `conmutacion_respaldo` / `suministro_restablecido` | `desde`/`hacia` · `duracion_respaldo_s` | HU-52 esc. 1 (solo con sensado) |
 | `respaldo_autonomia_critica` | `transcurrido_s`, `autonomia_medida_min`, `base` | HU-52 esc. 3 (estimación) |
-| `config_modificada` | `clave` (nombre de la clave NVS, nunca el valor), `accion` (`set`/`borrar`) | IOT-002 |
+| `config_modificada` | `clave` (nombre de la clave NVS, nunca el valor), `accion` (`set`/`borrar`; `generar` para `mqtt_key`) | IOT-002, IOT-006 |
 | `reinicio_manual` | — (se publica antes del DISCONNECT ordenado, que no dispara el LWT) | IOT-002 |
 | `consola_desbloqueada` | — (desbloqueo con la clave de servicio, 10 min) | IOT-002 |
 | `consola_desbloqueo_fallido` | `intentos` (fallos seguidos al activarse el freno) | IOT-002 |

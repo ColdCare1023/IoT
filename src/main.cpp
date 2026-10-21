@@ -32,6 +32,7 @@
 #include "core/Consola.h"
 #include "core/Json.h"
 #include "core/Payload.h"
+#include "core/Pem.h"
 #include "core/Registro.h"
 #include "core/Tiempo.h"
 #include "network/MQTTManager.h"
@@ -42,6 +43,7 @@
 #include "sensors/SHT31Sensor.h"
 #include "storage/BufferLittleFS.h"
 #include "system/ActualizacionOTA.h"
+#include "system/CertificadoCliente.h"
 #include "system/Configuracion.h"
 #include "system/Eventos.h"
 #include "system/PowerBackup.h"
@@ -272,10 +274,12 @@ static void imprimirEstado() {
     Serial.printf("device_id=%s boot_id=%lu seq_no=%lu uptime=%lus intervalo=%lus\n",
                   g_config.deviceId.c_str(), (unsigned long)g_bootId, (unsigned long)g_seqNo,
                   (unsigned long)uptimeSegundos(), (unsigned long)g_config.intervaloMuestreoS);
-    Serial.printf("wifi=%s rssi=%d dBm intentos_fallidos=%lu retardo=%lums diag=%d | mqtt=%s ca=%d aprov=%d\n",
+    Serial.printf("wifi=%s rssi=%d dBm intentos_fallidos=%lu retardo=%lums diag=%d | mqtt=%s ca=%d aprov=%d "
+                  "cert_cliente=%d\n",
                   wifi.conectado() ? "OK" : "NO", wifi.rssi(), (unsigned long)wifi.intentosFallidos(),
                   (unsigned long)wifi.retardoActualMs(), wifi.diagnosticoActivo() ? 1 : 0,
-                  mqtt.conectado() ? "OK" : "NO", mqtt.caCargada() ? 1 : 0, mqtt.aprovisionado() ? 1 : 0);
+                  mqtt.conectado() ? "OK" : "NO", mqtt.caCargada() ? 1 : 0, mqtt.aprovisionado() ? 1 : 0,
+                  mqtt.certificadoCliente() ? 1 : 0);
     Serial.printf("reloj=%s | buffer: pendientes=%lu/%lu ocupacion=%u%% libres=%luKB cuarentena=%lu\n",
                   relojSincronizado() ? "sntp_synced" : "unsynced", (unsigned long)buffer.pendientes(),
                   (unsigned long)buffer.capacidad(), (unsigned)buffer.ocupacionPct(),
@@ -308,13 +312,73 @@ static void imprimirRssi() {
                   promedio >= -65 ? "CONFORME (>= -65 dBm)" : "NO CONFORME (< -65 dBm)");
 }
 
+/// IOT-006: identidad TLS del nodo (clave generada aquí, CSR, certificado).
+static void atenderComandoTls(const String& resto) {
+    const int e = resto.indexOf(' ');
+    const String accion = e < 0 ? resto : resto.substring(0, e);
+    String args = e < 0 ? String() : resto.substring(e + 1);
+    args.trim();
+    if (accion == "csr") {
+        String csr;
+        bool claveNueva = false;
+        switch (prepararCsr(g_config.deviceId, args == "nueva", csr, claveNueva)) {
+            case ResultadoCsr::Generada: {
+                if (claveNueva) {
+                    core::ObjetoJSON d;
+                    d.cadena("clave", "mqtt_key");
+                    d.cadena("accion", "generar");
+                    encolarEvento("config_modificada", d.cerrar());
+                }
+                Serial.printf("%s. CSR con CN=%s (firmarla con la CA de dispositivos, uso clientAuth):\n",
+                              claveNueva ? "Clave nueva generada en el nodo" : "Clave existente",
+                              g_config.deviceId.c_str());
+                Serial.print(csr);
+                break;
+            }
+            case ResultadoCsr::SinDeviceId:
+                Serial.println("Sin device_id valido: aprovisionarlo antes de generar la CSR.");
+                break;
+            case ResultadoCsr::SinRadio:
+                Serial.println("Wi-Fi apagado: configure wifi_ssid y reinicie (la clave usa el RNG con la "
+                               "radio encendida).");
+                break;
+            default:
+                Serial.println("No se pudo generar la clave o la CSR.");
+                break;
+        }
+    } else if (accion == "certificado") {
+        String motivo;
+        if (instalarCertificadoCliente(g_config.deviceId, args, motivo)) {
+            Serial.println("Certificado de cliente instalado. Reiniciar para conectar con TLS mutuo.");
+            core::ObjetoJSON d;
+            d.cadena("clave", "mqtt_cert");
+            d.cadena("accion", "set");
+            encolarEvento("config_modificada", d.cerrar());
+        } else {
+            Serial.printf("Certificado RECHAZADO (%s).\n", motivo.c_str());
+        }
+    } else if (accion == "borrar") {
+        const bool ok = borrarCertificadoCliente();
+        Serial.printf("tls borrar -> %s. Reiniciar para aplicar.\n", ok ? "OK" : "RECHAZADO");
+        if (ok) {
+            core::ObjetoJSON d;
+            d.cadena("clave", "mqtt_cert");
+            d.cadena("accion", "borrar");
+            encolarEvento("config_modificada", d.cerrar());
+        }
+    } else {
+        Serial.println("Uso: tls csr [nueva] | tls certificado <base64_der> | tls borrar");
+    }
+}
+
 static void atenderConsola() {
     static String linea;
     while (Serial.available()) {
         const char c = (char)Serial.read();
         if (c == '\r') continue;
         if (c != '\n') {
-            if (linea.length() < 200) linea += c;
+            // IOT-006: el certificado del nodo llega en una sola línea (base64).
+            if (linea.length() < core::PEM_BASE64_MAXIMO + 32) linea += c;
             continue;
         }
         String cmd = linea;
@@ -337,6 +401,7 @@ static void atenderConsola() {
 
         if (verbo == "ayuda" || verbo == "help") {
             Serial.println("Comandos: estado | rssi | nvs set <clave> <valor> | nvs borrar <clave> | "
+                           "tls csr [nueva] | tls certificado <base64_der> | tls borrar | "
                            "reiniciar | desbloquear <clave_servicio> | bloquear"
 #if MODO_DEMO
                            " | demo excursion <temp_C> <n_lecturas>"
@@ -367,6 +432,8 @@ static void atenderConsola() {
         } else if (verbo == "bloquear") {
             g_consola.bloquear();
             Serial.println(hayClave ? "Consola bloqueada." : "Sin clave de servicio: no hay bloqueo que aplicar.");
+        } else if (verbo == "tls") {
+            atenderComandoTls(resto);
         } else if (verbo == "estado") {
             imprimirEstado();
         } else if (verbo == "rssi") {
@@ -786,6 +853,15 @@ void setup() {
     // queda "no aprovisionado" (fallo cerrado) y las lecturas siguen en LittleFS.
     mqtt.configurar(g_config.mqttHost, g_config.deviceId,
                     g_config.identidadBloqueada ? String() : g_config.mqttToken);
+    // IOT-006: con certificado de cliente el broker liga la conexión a la clave
+    // del nodo; el token por sí solo deja de bastar donde el backend lo exige.
+    if (!g_config.identidadBloqueada) {
+        String certPem, clavePem;
+        if (cargarCertificadoCliente(g_config.deviceId, certPem, clavePem)) {
+            mqtt.configurarCertificadoCliente(certPem, clavePem);
+            LOG_I("Setup", "Certificado de cliente instalado: TLS mutuo con el broker.");
+        }
+    }
     if (g_config.identidadBloqueada) {
         LOG_E("Setup", "FIRMWARE DEMO sobre un nodo con device_id productivo en NVS: NO se publica. "
                        "Instale el firmware de produccion o use una placa de demostracion.");
@@ -815,6 +891,7 @@ void setup() {
         d.booleano("fs_formateado", formateado);
         d.booleano("consola_protegida", g_aprovisionadoAlArrancar && !g_huellaServicio.isEmpty());
         d.cadena("particion", particionEnEjecucion());  // IOT-004
+        d.booleano("certificado_cliente", mqtt.certificadoCliente());  // IOT-006
         d.booleano("imagen_a_prueba", g_imagenAPrueba);
         d.sinSigno("pendientes_recuperados", informe.pendientes);
         d.sinSigno("segmentos_con_cola_parcial", informe.segmentosConColaParcial);

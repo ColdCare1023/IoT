@@ -104,7 +104,8 @@ bool MQTTManager::conectar() {
     if (!_mqtt.subscribe(_topicoOta.c_str(), MQTT_QOS)) {
         LOG_E("MQTT", "No se pudo suscribir a %s: no habra OTA.", _topicoOta.c_str());
     }
-    LOG_I("MQTT", "Conectado (TLS, QoS %d). Acuses en %s.", MQTT_QOS, _topicoAck.c_str());
+    LOG_I("MQTT", "Conectado (%s, QoS %d). Acuses en %s.", certificadoCliente() ? "TLS mutuo" : "TLS",
+          MQTT_QOS, _topicoAck.c_str());
     return true;
 }
 
@@ -150,6 +151,14 @@ bool MQTTManager::esperarAck(uint32_t bootId, uint32_t seqNo, uint32_t timeoutMs
         alimentarWatchdog();
         delay(10);
     }
+}
+
+void MQTTManager::configurarCertificadoCliente(const String& certPem, const String& clavePem) {
+    _certPem = certPem;
+    _clavePem = clavePem;
+    if (_certPem.isEmpty() || _clavePem.isEmpty()) return;
+    _tls.setCertificate(_certPem.c_str());
+    _tls.setPrivateKey(_clavePem.c_str());
 }
 
 const char* MQTTManager::caPem() const {

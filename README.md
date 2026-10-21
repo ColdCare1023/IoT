@@ -77,6 +77,11 @@ Cinco claves erróneas seguidas imponen 10 minutos de espera. La clave se guarda
 SHA-256, y cada cambio (`config_modificada`), desbloqueo y reinicio manual se publica como evento.
 Sin clave de servicio el nodo avisa en el arranque de que la consola sigue abierta.
 
+IOT-006 (opcional, broker con TLS mutuo): `tls csr` genera en el nodo una clave EC P-256 (nunca se
+muestra) e imprime la CSR con `CN=<device_id>`; firmada por la CA de dispositivos
+(`Backend/infra-local/scripts/firmar_csr_nodo.sh` en el entorno local), se instala con
+`tls certificado <base64>` y se aplica al reiniciar. `tls borrar` elimina clave y certificado.
+
 Otros comandos: `estado`, `rssi` (protocolo C-5), `ayuda`.
 
 ## Pines (ESP32 DevKitC V4)

@@ -69,7 +69,9 @@ La configuración está en `seguridad_produccion.sdkconfig` y `partitions_produc
    UART. Tarda alrededor de un minuto.
 5. **Aprovisionar** por la consola serie (las claves de NVS Encryption se generan solas en el primer uso):
    `nvs set wifi_ssid …`, `wifi_pass`, `mqtt_host`, `mqtt_token`, `device_id` y **`clave_servicio`**
-   (IOT-002), y `reiniciar`.
+   (IOT-002), y `reiniciar`. Si el broker admite TLS mutuo (IOT-006): `desbloquear …`, `tls csr` (la clave
+   se genera en el nodo y queda en la NVS cifrada), firmar la CSR con la CA de dispositivos (uso
+   `clientAuth`, CN = device_id), `tls certificado <base64>` y `reiniciar`.
 6. **Verificar**: el evento `arranque` llega con `consola_protegida: true`; `esptool.py read_flash` ya no
    responde (modo de descarga desactivado); un `firmware.bin` sin firmar no arranca.
 7. Registrar en el backend la huella SHA-256 del `firmware-signed.bin` instalado (`firmware_releases`).
