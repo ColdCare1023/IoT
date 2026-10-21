@@ -76,10 +76,22 @@ La configuración está en `seguridad_produccion.sdkconfig` y `partitions_produc
 
 ## Actualizaciones
 
-Tras el procedimiento solo es posible actualizar por **OTA firmada** (IOT-004): la imagen se firma con la
-misma clave, debe tener versión de seguridad mayor o igual a la quemada y queda a prueba hasta superar el
-autodiagnóstico; si no, el bootloader vuelve a la anterior. Para retirar del servicio una versión vulnerable,
-subir `CONFIG_BOOTLOADER_APP_SECURE_VERSION` en `seguridad_produccion.sdkconfig`.
+Tras el procedimiento solo es posible actualizar por **OTA** (IOT-004, ver `docs/contrato_payload_v1.md`
+§3.1):
+
+1. Subir `FW_MAYOR/FW_MENOR/FW_PARCHE` (el nodo rechaza versiones no posteriores), compilar y **firmar**
+   `firmware.bin` como en el paso 2.
+2. Publicar `firmware-signed.bin` en un servidor HTTPS cuya CA raíz esté en el `root_ca.pem` embebido
+   (sin redirecciones: el nodo no las sigue).
+3. Registrar la release en el backend con `hash_sha256` (de `firmware-signed.bin`), `url_descarga` y
+   `tamano_bytes`, programar el despliegue y ejecutarlo: el backend publica la orden en
+   `farmacias/<device_id>/ota`.
+4. El nodo descarga, comprueba tamaño y SHA-256, y el bootloader exige la firma de Secure Boot. La imagen
+   arranca **a prueba**: se confirma (`ota_confirmada`) cuando captura una lectura y conecta con el broker;
+   si no lo logra en 15 min, vuelve a la anterior (`ota_revertida`).
+
+Para retirar del servicio una versión vulnerable, subir `CONFIG_BOOTLOADER_APP_SECURE_VERSION` en
+`seguridad_produccion.sdkconfig`: el eFuse anti-rollback impide volver a imágenes con un valor menor.
 
 ## Estado de verificación en este repositorio
 

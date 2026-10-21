@@ -19,6 +19,7 @@ void run_tests_backoff(void);
 void run_tests_credenciales(void);
 void run_tests_identidad(void);
 void run_tests_consola(void);
+void run_tests_ota(void);
 
 int main(int, char**) {
     UNITY_BEGIN();
@@ -32,5 +33,6 @@ int main(int, char**) {
     run_tests_credenciales();
     run_tests_identidad();
     run_tests_consola();
+    run_tests_ota();
     return UNITY_END();
 }

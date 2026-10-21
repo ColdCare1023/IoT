@@ -151,3 +151,26 @@ Cada decisión indica el requisito que la motiva y lo que se sacrifica.
   es la que monta el firmware.
 - **Pendiente en hardware.** Primer arranque con cifrado en sitio, montaje de LittleFS sobre la partición
   cifrada y aprovisionamiento por consola con NVS Encryption.
+
+## ADR-14 · Actualización OTA verificada con vuelta atrás (IOT-004)
+
+- **Contexto.** El nodo solo se actualizaba por USB y el backend daba por instalada una versión que nadie
+  había descargado. Con Secure Boot y la descarga UART desactivada (ADR-13) el USB deja de ser opción.
+- **Orden.** El backend publica en `farmacias/<device_id>/ota` (solo él puede: ACL) la versión, una URL
+  HTTPS, la SHA-256 y el tamaño de la imagen. El nodo la valida (`core::parsearOrdenOTA`, pruebas nativas):
+  es para él, la versión es posterior a la que corre y la URL, la huella y el tamaño son válidos.
+- **Descarga.** Con la CA de confianza del nodo (embebida en producción), sin seguir redirecciones, con
+  `Content-Length` igual al anunciado y la SHA-256 calculada por partes mientras se escribe en la otra
+  partición; si no coincide, la imagen nunca se activa. En producción `esp_ota_end` y el bootloader exigen
+  además la firma de Secure Boot. Ninguna espera bloquea más que el plazo del watchdog (`static_assert`);
+  la captura sigue en su tarea durante la descarga.
+- **Vuelta atrás.** `verifyRollbackLater()` deja la imagen nueva *a prueba*: se confirma cuando captura una
+  lectura y conecta con el broker; si no lo logra en 15 min se invalida y el bootloader vuelve a la
+  anterior, que lo informa con `ota_revertida`. Una imagen a prueba no acepta otra OTA.
+- **Resultado.** Solo el nodo cierra el despliegue en el backend (`ota_confirmada`, `ota_fallida`,
+  `ota_rechazada`, `ota_revertida`).
+- **Verificado.** Pruebas nativas de la orden, versiones, SHA-256 por partes (vectores FIPS) y decisión de
+  arranque; `esp32dev`, `demo` y `produccion` compilan. La aplicación ocupa ~92 % de su partición (1216 KB),
+  y la imagen firmada de producción añade un bloque de firma de 4 KB.
+- **Pendiente en hardware.** Descarga real contra un servidor HTTPS, reinicio, confirmación y reversión
+  forzada (imagen que no conecta) en una placa de laboratorio.

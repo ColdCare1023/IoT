@@ -12,9 +12,11 @@ Ejemplos generados con el código real del firmware: [`docs/ejemplos/`](ejemplos
 | `farmacias/<device_id>/lecturas` | nodo → backend | 1 | Telemetría v1.0 |
 | `farmacias/<device_id>/eventos` | nodo → backend | 1 | Eventos de diagnóstico y LWT |
 | `farmacias/<device_id>/ack` | backend → nodo | 1 | Acuse lógico tras `COMMIT` |
+| `farmacias/<device_id>/ota` | backend → nodo | 1 | Orden de actualización OTA (IOT-004) |
 
 ACL sugerida en EMQX (HU-10): el usuario `<device_id>` solo puede **publicar** en
-`farmacias/<device_id>/lecturas` y `.../eventos`, y solo **suscribirse** a `farmacias/<device_id>/ack`.
+`farmacias/<device_id>/lecturas` y `.../eventos`, y solo **suscribirse** a `farmacias/<device_id>/ack`
+y `.../ota`. Solo la cuenta del backend publica en `farmacias/+/ack` y `farmacias/+/ota`.
 
 ## 1. Telemetría (`.../lecturas`)
 
@@ -111,7 +113,7 @@ Se aceptan también `estado` y los valores `commit_confirmado` / `duplicado` / `
 
 | `event_type` | `detail` | HU |
 |---|---|---|
-| `arranque` | `reset_reason`, `firmware_version`, `intervalo_s`, `fs_formateado`, `consola_protegida`, `pendientes_recuperados`, `segmentos_con_cola_parcial`, `bytes_parciales_ignorados`, `cursor_reconstruido` | HU-06 esc. 2, QA |
+| `arranque` | `reset_reason`, `firmware_version`, `intervalo_s`, `fs_formateado`, `consola_protegida`, `particion`, `imagen_a_prueba`, `pendientes_recuperados`, `segmentos_con_cola_parcial`, `bytes_parciales_ignorados`, `cursor_reconstruido` | HU-06 esc. 2, QA |
 | `online` | `rssi_dbm`, `pendientes`, `firmware_version` | HU-13 esc. 3 |
 | `lwt_offline` | *(sin `detail`; lo publica el broker)* | HU-13 esc. 1 |
 | `buffer_80` | `ocupacion_pct`, `pendientes`, `capacidad` | HU-06 |
@@ -126,7 +128,34 @@ Se aceptan también `estado` y los valores `commit_confirmado` / `duplicado` / `
 | `reinicio_manual` | — (se publica antes del DISCONNECT ordenado, que no dispara el LWT) | IOT-002 |
 | `consola_desbloqueada` | — (desbloqueo con la clave de servicio, 10 min) | IOT-002 |
 | `consola_desbloqueo_fallido` | `intentos` (fallos seguidos al activarse el freno) | IOT-002 |
+| `ota_iniciada` | `version` (descarga en curso) | IOT-004 |
+| `ota_instalada` | `version`, `resultado` (`instalada`); el nodo reinicia para arrancarla a prueba | IOT-004 |
+| `ota_rechazada` | `motivo` (campo inválido de la orden, o `imagen_en_prueba`) o `version` + `resultado` (`version_no_posterior`) | IOT-004 |
+| `ota_fallida` | `version`, `resultado` (`sin_ca`, `descarga`, `tamano_distinto`, `huella_distinta`, `escritura`) | IOT-004 |
+| `ota_confirmada` | `firmware_version`, `particion` (la imagen nueva superó el autodiagnóstico) | IOT-004 |
+| `ota_revertida` | `firmware_version`, `particion` (el bootloader volvió a la imagen anterior) | IOT-004 |
 | `estado_nodo` (cada 5 min) | `pendientes`, `ocupacion_pct`, `capacidad`, `perdidas_total`, `cuarentena`, `ultimo_seq_no`, `rssi_dbm`, `heap_libre`, `heap_minimo`, `intervalo_s`, `pubacks_sin_ack`, `acks_huella_ajena`, `eventos_descartados`, `reloj_sntp`, `saltos_reloj_rechazados` | HU-48 esc. 1, C-5 |
+
+## 3.1 Orden OTA (`.../ota`) — backend → nodo (IOT-004)
+
+```json
+{"device_id":"ESP32_FARMACIA_01","version":"1.3.0",
+ "url":"https://firmware.example.org/coldcare-1.3.0.bin",
+ "sha256":"<64 hex en minúsculas>","tamano":1100000}
+```
+
+El nodo la acepta solo si `device_id` es el suyo, `version` es `X.Y.Z` y **posterior** a la que
+corre, `url` es HTTPS (≤ 256 caracteres, sin espacios ni comillas), `sha256` tiene 64 hex en
+minúsculas y `tamano` cabe en la partición de aplicación (≤ `0x130000`). Descarga sin seguir
+redirecciones, con la misma CA de confianza que usa para el broker (el servidor de descargas debe
+estar en el paquete de `data/certs/root_ca.pem`), exige `Content-Length == tamano` y solo activa la
+imagen si su SHA-256 coincide con la orden. Con Secure Boot (entorno `produccion`) el bootloader
+exige además la firma. La imagen nueva arranca **a prueba**: se confirma cuando captura una lectura
+y conecta con el broker; si no lo logra en 15 min (`OTA_PLAZO_VERIFICACION_MS`) se revierte.
+Mientras una imagen está a prueba no se instala otra.
+
+El backend deja el despliegue `enviado` al publicar la orden y lo cierra con el evento del nodo:
+`ota_confirmada` → `exitoso`; `ota_fallida`/`ota_rechazada` → `fallido`; `ota_revertida` → `revertido`.
 
 ## 4. Diferencias con el contrato que hoy valida el backend
 

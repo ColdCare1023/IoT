@@ -41,6 +41,7 @@
 #include "sensors/MC38Sensor.h"
 #include "sensors/SHT31Sensor.h"
 #include "storage/BufferLittleFS.h"
+#include "system/ActualizacionOTA.h"
 #include "system/Configuracion.h"
 #include "system/Eventos.h"
 #include "system/PowerBackup.h"
@@ -74,6 +75,11 @@ static String g_huellaServicio;
 static bool g_aprovisionadoAlArrancar = false;
 
 static void publicarEventoDirecto(const char* tipo, const std::string& detalle);
+
+// IOT-004: autodiagnóstico de una imagen recién instalada por OTA.
+static bool g_imagenAPrueba = false;
+static volatile bool g_capturoLectura = false;
+static bool g_conectoBroker = false;
 
 #if MODO_DEMO
 // Excursión SIMULADA para la demo/sustentación. Cada lectura afectada lleva
@@ -224,6 +230,7 @@ static void taskCaptura(void*) {
     for (;;) {
         const core::RegistroLectura r = capturar();
         const core::ResultadoGuardado g = buffer.guardar(r);
+        if (g == core::ResultadoGuardado::Guardado) g_capturoLectura = true;  // IOT-004
         if (g != core::ResultadoGuardado::Guardado) {
             LOG_E("Captura", "Lectura seq=%lu NO almacenada (%s): contada como perdida.",
                   (unsigned long)r.seqNo, textoGuardado(g));
@@ -535,6 +542,74 @@ static void revisarRotacionToken() {
     encolarEvento("credencial_rotada", "");
 }
 
+/// IOT-004: confirma la imagen en prueba cuando el nodo demostró que funciona;
+/// si no lo logra en el plazo, la invalida y el bootloader vuelve a la anterior.
+static void verificarArranqueOTA() {
+    if (!g_imagenAPrueba) return;
+    switch (core::evaluarArranque(true, g_capturoLectura, g_conectoBroker, millis(),
+                                  OTA_PLAZO_VERIFICACION_MS)) {
+        case core::DecisionArranque::Confirmar: {
+            confirmarImagen();
+            g_imagenAPrueba = false;
+            LOG_I("OTA", "Imagen v%d.%d.%d confirmada en %s.", FW_MAYOR, FW_MENOR, FW_PARCHE,
+                  particionEnEjecucion());
+            core::ObjetoJSON d;
+            d.cadena("firmware_version", core::textoVersionFirmware(FW_MAYOR, FW_MENOR, FW_PARCHE));
+            d.cadena("particion", particionEnEjecucion());
+            encolarEvento("ota_confirmada", d.cerrar());
+            break;
+        }
+        case core::DecisionArranque::Revertir:
+            LOG_E("OTA", "La imagen nueva no capturo y conecto a tiempo: se revierte a la anterior.");
+            if (mqtt.conectado()) mqtt.desconectarOrdenadamente();
+            revertirImagen();  // no vuelve
+            break;
+        default:
+            break;
+    }
+}
+
+/// IOT-004: ejecuta una orden OTA recibida (validada al recibirla).
+static void atenderOrdenOTA() {
+    std::string motivo;
+    if (mqtt.tomarRechazoOTA(motivo)) {
+        core::ObjetoJSON d;
+        d.cadena("motivo", motivo);
+        publicarEventoDirecto("ota_rechazada", d.cerrar());
+    }
+    core::OrdenOTA orden;
+    if (!mqtt.tomarOrdenOTA(orden)) return;
+    if (g_imagenAPrueba) {
+        // Una imagen sin confirmar no instala otra encima: se perdería la vuelta atrás.
+        core::ObjetoJSON d;
+        d.cadena("version", orden.version);
+        d.cadena("motivo", "imagen_en_prueba");
+        publicarEventoDirecto("ota_rechazada", d.cerrar());
+        return;
+    }
+    {
+        core::ObjetoJSON d;
+        d.cadena("version", orden.version);
+        publicarEventoDirecto("ota_iniciada", d.cerrar());
+    }
+    LOG_I("OTA", "Descargando v%s (%lu bytes)...", orden.version.c_str(), (unsigned long)orden.tamano);
+    const ResultadoOTA resultado = instalarOTA(orden, mqtt.caPem());
+    core::ObjetoJSON d;
+    d.cadena("version", orden.version);
+    d.cadena("resultado", nombreResultadoOTA(resultado));
+    if (resultado != ResultadoOTA::Instalada) {
+        LOG_E("OTA", "Actualizacion a v%s no aplicada (%s).", orden.version.c_str(), nombreResultadoOTA(resultado));
+        publicarEventoDirecto(resultado == ResultadoOTA::VersionNoPosterior ? "ota_rechazada" : "ota_fallida",
+                              d.cerrar());
+        return;
+    }
+    publicarEventoDirecto("ota_instalada", d.cerrar());
+    LOG_I("OTA", "v%s instalada: reinicio para arrancarla a prueba.", orden.version.c_str());
+    mqtt.desconectarOrdenadamente();
+    delay(200);
+    ESP.restart();
+}
+
 static void taskRed(void*) {
     suscribirTareaAlWatchdog("Red");
     static TransmisorMQTT transmisor(mqtt, g_config.deviceId);
@@ -558,6 +633,7 @@ static void taskRed(void*) {
         if (consumirAvisoSincronizacion(epochSync)) {
             LOG_I("Reloj", "SNTP sincronizado: %s", core::formatearISO8601(epochSync).c_str());
         }
+        verificarArranqueOTA();
         if (consumirAvisoSaltoRechazado()) {
             LOG_E("Reloj", "SNTP respondio una hora que salta mas de %lu s respecto de este arranque: "
                            "descartada (total %lu).", (unsigned long)core::TOLERANCIA_SALTO_RELOJ_S,
@@ -592,6 +668,7 @@ static void taskRed(void*) {
                 delay(500);
                 continue;
             }
+            g_conectoBroker = true;  // IOT-004: autodiagnóstico
         }
         if (!sesionAnunciada) {
             // HU-13 esc. 3: el nodo anuncia que volvió a estar en línea.
@@ -615,6 +692,7 @@ static void taskRed(void*) {
             sesionAnunciada = true;
         }
         mqtt.loop();
+        atenderOrdenOTA();
 
         publicarEventosPendientes();
 
@@ -682,8 +760,19 @@ void setup() {
         LOG_E("Setup", "LittleFS no montaba y se formateo: buffer vacio.");
     }
 
-    // IOT-005: con la identidad bloqueada no se entrega token al cliente MQTT:
-    // queda "no aprovisionado" (fallo cerrado) y las lecturas siguen en LittleFS.
+    // IOT-004: ¿arranca una imagen recién instalada por OTA? ¿se revirtió una?
+    g_imagenAPrueba = imagenEnPrueba();
+    if (g_imagenAPrueba) {
+        LOG_I("OTA", "Imagen v%d.%d.%d A PRUEBA en %s: se confirma al capturar y conectar.",
+              FW_MAYOR, FW_MENOR, FW_PARCHE, particionEnEjecucion());
+    }
+    if (consumirAvisoReversion()) {
+        core::ObjetoJSON d;
+        d.cadena("firmware_version", core::textoVersionFirmware(FW_MAYOR, FW_MENOR, FW_PARCHE));
+        d.cadena("particion", particionEnEjecucion());
+        encolarEvento("ota_revertida", d.cerrar());
+    }
+
     // IOT-002: la consola de escritura se bloquea en un nodo aprovisionado
     // con clave de servicio.
     g_huellaServicio = huellaClaveServicio();
@@ -693,6 +782,8 @@ void setup() {
                        "bloquearla en este nodo aprovisionado.");
     }
 
+    // IOT-005: con la identidad bloqueada no se entrega token al cliente MQTT:
+    // queda "no aprovisionado" (fallo cerrado) y las lecturas siguen en LittleFS.
     mqtt.configurar(g_config.mqttHost, g_config.deviceId,
                     g_config.identidadBloqueada ? String() : g_config.mqttToken);
     if (g_config.identidadBloqueada) {
@@ -723,6 +814,8 @@ void setup() {
         d.booleano("sensado_energia", SENSADO_ENERGIA_INSTALADO != 0);
         d.booleano("fs_formateado", formateado);
         d.booleano("consola_protegida", g_aprovisionadoAlArrancar && !g_huellaServicio.isEmpty());
+        d.cadena("particion", particionEnEjecucion());  // IOT-004
+        d.booleano("imagen_a_prueba", g_imagenAPrueba);
         d.sinSigno("pendientes_recuperados", informe.pendientes);
         d.sinSigno("segmentos_con_cola_parcial", informe.segmentosConColaParcial);
         d.sinSigno("bytes_parciales_ignorados", informe.bytesParcialesIgnorados);

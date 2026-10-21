@@ -9,6 +9,7 @@
 
 #include "../config.h"
 #include "../core/Ack.h"
+#include "../core/Ota.h"
 #include "../core/Backoff.h"
 
 /**
@@ -63,6 +64,13 @@ public:
     const String& topicoAck() const { return _topicoAck; }
 
     bool caCargada() const { return _caCargada; }
+    /// CA de confianza (embebida o de LittleFS); también la usa la OTA (IOT-004).
+    const char* caPem() const;
+
+    /// IOT-004: orden OTA recibida en `.../ota` y ya validada (una pendiente a la vez).
+    bool tomarOrdenOTA(core::OrdenOTA& orden);
+    /// Motivo de la última orden OTA rechazada al validarla ("" si ninguna).
+    bool tomarRechazoOTA(std::string& motivo);
     bool aprovisionado() const { return _aprovisionado; }
     int ultimoCodigoRetorno() { return (int)_mqtt.returnCode(); }
     int ultimoError() { return (int)_mqtt.lastError(); }
@@ -83,6 +91,7 @@ private:
     String _topicoLecturas;
     String _topicoEventos;
     String _topicoAck;
+    String _topicoOta;
     std::string _lwt;
 
     bool _caCargada = false;
@@ -92,6 +101,9 @@ private:
     // rechaza la credencial no se martillea con un handshake TLS cada 5 s.
     core::Backoff _reintento{5000, 60000, 2};
     uint32_t _acksIgnorados = 0;
+    core::OrdenOTA _ordenOta;
+    bool _hayOrdenOta = false;
+    std::string _rechazoOta;
 };
 
 #endif  // MQTT_MANAGER_H

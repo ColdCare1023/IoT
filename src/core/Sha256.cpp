@@ -52,33 +52,59 @@ void procesarBloque(uint32_t h[8], const uint8_t bloque[64]) {
 
 }  // namespace
 
-std::string sha256Hex(const uint8_t* datos, size_t largo) {
-    uint32_t h[8] = {0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
-                     0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19};
-    size_t i = 0;
-    for (; i + 64 <= largo; i += 64) procesarBloque(h, datos + i);
+Sha256::Sha256() { _reiniciar(); }
 
+void Sha256::_reiniciar() {
+    static const uint32_t INICIAL[8] = {0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+                                        0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19};
+    std::memcpy(_h, INICIAL, sizeof(_h));
+    _enBloque = 0;
+    _total = 0;
+}
+
+void Sha256::actualizar(const uint8_t* datos, size_t largo) {
+    _total += largo;
+    while (largo > 0) {
+        const size_t tomar = (64 - _enBloque) < largo ? (64 - _enBloque) : largo;
+        std::memcpy(_bloque + _enBloque, datos, tomar);
+        _enBloque += tomar;
+        datos += tomar;
+        largo -= tomar;
+        if (_enBloque == 64) {
+            procesarBloque(_h, _bloque);
+            _enBloque = 0;
+        }
+    }
+}
+
+std::string Sha256::finalizarHex() {
     // Relleno: 0x80, ceros y la longitud en bits (big-endian, 64 bits).
+    const uint64_t bits = _total * 8u;
     uint8_t cola[128] = {0};
-    const size_t resto = largo - i;
-    if (resto > 0) std::memcpy(cola, datos + i, resto);
-    cola[resto] = 0x80;
-    const size_t total = (resto + 1 + 8 <= 64) ? 64 : 128;
-    const uint64_t bits = (uint64_t)largo * 8u;
+    std::memcpy(cola, _bloque, _enBloque);
+    cola[_enBloque] = 0x80;
+    const size_t total = (_enBloque + 1 + 8 <= 64) ? 64 : 128;
     for (int k = 0; k < 8; ++k) cola[total - 1 - k] = (uint8_t)(bits >> (8 * k));
-    procesarBloque(h, cola);
-    if (total == 128) procesarBloque(h, cola + 64);
+    procesarBloque(_h, cola);
+    if (total == 128) procesarBloque(_h, cola + 64);
 
     static const char hex[] = "0123456789abcdef";
     std::string salida(64, '0');
     for (int j = 0; j < 8; ++j) {
         for (int k = 0; k < 4; ++k) {
-            const uint8_t byte = (uint8_t)(h[j] >> (24 - 8 * k));
+            const uint8_t byte = (uint8_t)(_h[j] >> (24 - 8 * k));
             salida[8 * j + 2 * k] = hex[byte >> 4];
             salida[8 * j + 2 * k + 1] = hex[byte & 0x0f];
         }
     }
+    _reiniciar();
     return salida;
+}
+
+std::string sha256Hex(const uint8_t* datos, size_t largo) {
+    Sha256 calculo;
+    calculo.actualizar(datos, largo);
+    return calculo.finalizarHex();
 }
 
 std::string sha256Hex(const std::string& texto) {

@@ -107,6 +107,9 @@
 #define ACK_LOGICO_TIMEOUT_MS     8000   // espera del acuse del backend tras el PUBACK
 #define CERT_CA_ARCHIVO           "/certs/root_ca.pem"
 #define MQTT_BUFFER_BYTES         1024
+// IOT-004: plazo para que una imagen instalada por OTA demuestre que funciona
+// (captura una lectura y conecta con el broker) antes de revertirla.
+#define OTA_PLAZO_VERIFICACION_MS (15UL * 60UL * 1000UL)
 
 // Tópicos: farmacias/<device_id>/{lecturas|eventos|ack}
 #define TOPICO_PREFIJO "farmacias/"

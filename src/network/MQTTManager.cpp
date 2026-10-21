@@ -47,6 +47,7 @@ void MQTTManager::configurar(const String& host, const String& deviceId, const S
     _topicoLecturas = String(TOPICO_PREFIJO) + deviceId + "/lecturas";
     _topicoEventos = String(TOPICO_PREFIJO) + deviceId + "/eventos";
     _topicoAck = String(TOPICO_PREFIJO) + deviceId + "/ack";
+    _topicoOta = String(TOPICO_PREFIJO) + deviceId + "/ota";
     _lwt = core::serializarLWT(std::string(deviceId.c_str()));
 
     // HU-14: un host con esquema o puerto ("mqtt://…", "…:1883") se rechaza.
@@ -99,6 +100,10 @@ bool MQTTManager::conectar() {
     if (!_mqtt.subscribe(_topicoAck.c_str(), MQTT_QOS)) {
         LOG_E("MQTT", "No se pudo suscribir a %s: el buffer no se liberara.", _topicoAck.c_str());
     }
+    // IOT-004: órdenes de actualización (solo el backend puede publicarlas: ACL).
+    if (!_mqtt.subscribe(_topicoOta.c_str(), MQTT_QOS)) {
+        LOG_E("MQTT", "No se pudo suscribir a %s: no habra OTA.", _topicoOta.c_str());
+    }
     LOG_I("MQTT", "Conectado (TLS, QoS %d). Acuses en %s.", MQTT_QOS, _topicoAck.c_str());
     return true;
 }
@@ -147,7 +152,40 @@ bool MQTTManager::esperarAck(uint32_t bootId, uint32_t seqNo, uint32_t timeoutMs
     }
 }
 
+const char* MQTTManager::caPem() const {
+#if CA_EMBEBIDA
+    return ROOT_CA_PEM;
+#else
+    return _caCargada ? _caPem.c_str() : nullptr;
+#endif
+}
+
+bool MQTTManager::tomarOrdenOTA(core::OrdenOTA& orden) {
+    if (!_hayOrdenOta) return false;
+    orden = _ordenOta;
+    _hayOrdenOta = false;
+    return true;
+}
+
+bool MQTTManager::tomarRechazoOTA(std::string& motivo) {
+    if (_rechazoOta.empty()) return false;
+    motivo = _rechazoOta;
+    _rechazoOta.clear();
+    return true;
+}
+
 void MQTTManager::_alRecibir(String& topico, String& payload) {
+    if (topico == _topicoOta) {
+        core::OrdenOTA orden;
+        std::string motivo;
+        if (core::parsearOrdenOTA(std::string(payload.c_str()), std::string(_deviceId.c_str()), orden, motivo)) {
+            _ordenOta = orden;
+            _hayOrdenOta = true;
+        } else {
+            _rechazoOta = motivo;
+        }
+        return;
+    }
     if (topico != _topicoAck) return;
     core::AckLogico ack;
     if (!core::parsearAck(std::string(payload.c_str()), ack) ||
