@@ -117,7 +117,7 @@ int main(int argc, char** argv) {
     b2.fijar(42, EPOCH, 36000);
     ok &= escribir(salida, "evento_buffer_saturado.json",
                    serializarEvento(DEVICE, 42, "buffer_saturado", EPOCH + 3060, 39060, b2, d.cerrar()));
-    ok &= escribir(salida, "evento_lwt_offline.json", serializarLWT(DEVICE));
+    ok &= escribir(salida, "evento_lwt_offline.json", serializarLWT(DEVICE, 42));
 
     return ok ? 0 : 1;
 }

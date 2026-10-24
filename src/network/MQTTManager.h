@@ -41,7 +41,7 @@ public:
     explicit MQTTManager(WiFiClientSecure& tls);
 
     /// Carga la CA desde LittleFS y prepara el cliente. Llamar una vez.
-    void configurar(const String& host, const String& deviceId, const String& token);
+    void configurar(const String& host, const String& deviceId, const String& token, uint32_t bootId);
 
     bool conectar();
     bool conectado();

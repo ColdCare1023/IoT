@@ -115,7 +115,7 @@ Se aceptan también `estado` y los valores `commit_confirmado` / `duplicado` / `
 |---|---|---|
 | `arranque` | `reset_reason`, `firmware_version`, `intervalo_s`, `fs_formateado`, `consola_protegida`, `particion`, `imagen_a_prueba`, `certificado_cliente`, `flash_cifrada`, `arranque_seguro`, `pendientes_recuperados`, `segmentos_con_cola_parcial`, `bytes_parciales_ignorados`, `cursor_reconstruido` | HU-06 esc. 2, QA |
 | `online` | `rssi_dbm`, `pendientes`, `firmware_version` | HU-13 esc. 3 |
-| `lwt_offline` | *(sin `detail`; lo publica el broker)* | HU-13 esc. 1 |
+| `lwt_offline` | *(sin `detail` ni hora; lo publica el broker. Lleva `boot_id` de la sesión: el backend ignora un LWT con `boot_id` menor que el del último `online`)* | HU-13 esc. 1 |
 | `buffer_80` | `ocupacion_pct`, `pendientes`, `capacidad` | HU-06 |
 | `buffer_saturado` | `perdidas_total`, `perdidas_episodio`, `episodio_abierto`, `desde_boot_id`, `desde_seq_no`, `desde`, `hasta_boot_id`, `hasta_seq_no`, `hasta`, `causa` | HU-06 esc. 3, HU-48 esc. 2 |
 | `registros_en_cuarentena` | `corruptos`, `rechazados_backend`, `invalidos`, `cuarentena_total` | HU-06 esc. 2 |
