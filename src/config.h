@@ -89,7 +89,6 @@
 #define SHT31_TIMEOUT_I2C_MS          50
 #define MC38_POLL_MS                  50
 #define MC38_DEBOUNCE_MS              50
-#define UMBRAL_PUERTA_PROLONGADA_S    60   // HU-04 esc. 3 (configurable)
 
 // =========================================================================
 // MQTT / EMQX Cloud Serverless — solo TLS en 8883, sin fallback a 1883
