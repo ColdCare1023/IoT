@@ -862,8 +862,9 @@ void setup() {
 
     // IOT-005: con la identidad bloqueada no se entrega token al cliente MQTT:
     // queda "no aprovisionado" (fallo cerrado) y las lecturas siguen en LittleFS.
+    // g_bootId ya está calculado (arriba): el LWT lleva el arranque de esta sesión (HU-13).
     mqtt.configurar(g_config.mqttHost, g_config.deviceId,
-                    g_config.identidadBloqueada ? String() : g_config.mqttToken);
+                    g_config.identidadBloqueada ? String() : g_config.mqttToken, g_bootId);
     // IOT-006: con certificado de cliente el broker liga la conexión a la clave
     // del nodo; el token por sí solo deja de bastar donde el backend lo exige.
     if (!g_config.identidadBloqueada) {

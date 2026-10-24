@@ -296,9 +296,11 @@ void test_evento_y_lwt(void) {
     TEST_ASSERT_TRUE(contiene(e, "\"occurred_at\":\"2026-09-25T15:31:00Z\""));
     TEST_ASSERT_TRUE(contiene(e, "\"detail\":{\"pendientes\":24000,\"ocupacion_pct\":80}"));
 
-    const std::string lwt = core::serializarLWT(DEVICE);
+    // HU-13: el LWT lleva el boot_id de la sesión para descartar LWT atrasados.
+    const std::string lwt = core::serializarLWT(DEVICE, 42);
     TEST_ASSERT_EQUAL_STRING(
-        "{\"schema_version\":\"1.0\",\"device_id\":\"ESP32_FARMACIA_01\",\"event_type\":\"lwt_offline\"}",
+        "{\"schema_version\":\"1.0\",\"device_id\":\"ESP32_FARMACIA_01\",\"boot_id\":42,"
+        "\"event_type\":\"lwt_offline\"}",
         lwt.c_str());
 }
 

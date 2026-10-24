@@ -58,7 +58,9 @@ std::string serializarEvento(const std::string& deviceId, uint32_t bootId,
                              const std::string& detalleJSON);
 
 /// Last Will: lo publica el broker, así que no puede llevar hora ni uptime.
-std::string serializarLWT(const std::string& deviceId);
+/// Sí lleva el boot_id de la sesión (HU-13): si el nodo reinició y ya volvió,
+/// el backend reconoce un LWT atrasado de la sesión anterior y lo ignora.
+std::string serializarLWT(const std::string& deviceId, uint32_t bootId);
 
 }  // namespace core
 
