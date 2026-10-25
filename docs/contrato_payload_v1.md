@@ -61,7 +61,7 @@ y `.../ota`. Solo la cuenta del backend publica en `farmacias/+/ack` y `farmacia
 | `sht31_fault` | igual que arriba | Motivo de la primera magnitud que falló. |
 | `door_open` | bool \| `null` | ¿Hubo apertura en la ventana? `null` si `mc38_status = "not_installed"`. |
 | `door_open_s` | uint16 \| `null` | Segundos abierta en la ventana. |
-| `door_open_streak_s` | uint16 \| `null` | Solo si la apertura en curso supera el umbral (60 s por defecto) — HU-04 esc. 3. |
+| `door_open_streak_s` | uint16 \| `null` | Segundos que lleva abierta la puerta **sin cerrarse** (apertura en curso al capturar); `null` si está cerrada. El aviso de apertura prolongada (HU-04 esc. 3, HU-35) lo aplica el backend con su umbral configurado. |
 | `mc38_status` | `installed` \| `not_installed` | |
 | `power_source` | `mains` \| `backup` \| `null` | `null` si el nodo no tiene sensado de suministro. |
 | `sensor_fault` | bool | `true` si DS18B20 o SHT31 fallaron. |
