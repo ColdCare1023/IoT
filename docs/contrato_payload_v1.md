@@ -61,7 +61,7 @@ y `.../ota`. Solo la cuenta del backend publica en `farmacias/+/ack` y `farmacia
 | `sht31_fault` | igual que arriba | Motivo de la primera magnitud que falló. |
 | `door_open` | bool \| `null` | ¿Hubo apertura en la ventana? `null` si `mc38_status = "not_installed"`. |
 | `door_open_s` | uint16 \| `null` | Segundos abierta en la ventana. |
-| `door_open_streak_s` | uint16 \| `null` | Solo si la apertura en curso supera el umbral (60 s por defecto) — HU-04 esc. 3. |
+| `door_open_streak_s` | uint16 \| `null` | Segundos que lleva abierta la puerta **sin cerrarse** (apertura en curso al capturar); `null` si está cerrada. El aviso de apertura prolongada (HU-04 esc. 3, HU-35) lo aplica el backend con su umbral configurado. |
 | `mc38_status` | `installed` \| `not_installed` | |
 | `power_source` | `mains` \| `backup` \| `null` | `null` si el nodo no tiene sensado de suministro. |
 | `sensor_fault` | bool | `true` si DS18B20 o SHT31 fallaron. |
@@ -115,7 +115,7 @@ Se aceptan también `estado` y los valores `commit_confirmado` / `duplicado` / `
 |---|---|---|
 | `arranque` | `reset_reason`, `firmware_version`, `intervalo_s`, `fs_formateado`, `consola_protegida`, `particion`, `imagen_a_prueba`, `certificado_cliente`, `flash_cifrada`, `arranque_seguro`, `pendientes_recuperados`, `segmentos_con_cola_parcial`, `bytes_parciales_ignorados`, `cursor_reconstruido` | HU-06 esc. 2, QA |
 | `online` | `rssi_dbm`, `pendientes`, `firmware_version` | HU-13 esc. 3 |
-| `lwt_offline` | *(sin `detail`; lo publica el broker)* | HU-13 esc. 1 |
+| `lwt_offline` | *(sin `detail` ni hora; lo publica el broker. Lleva `boot_id` de la sesión: el backend ignora un LWT con `boot_id` menor que el del último `online`)* | HU-13 esc. 1 |
 | `buffer_80` | `ocupacion_pct`, `pendientes`, `capacidad` | HU-06 |
 | `buffer_saturado` | `perdidas_total`, `perdidas_episodio`, `episodio_abierto`, `desde_boot_id`, `desde_seq_no`, `desde`, `hasta_boot_id`, `hasta_seq_no`, `hasta`, `causa` | HU-06 esc. 3, HU-48 esc. 2 |
 | `registros_en_cuarentena` | `corruptos`, `rechazados_backend`, `invalidos`, `cuarentena_total` | HU-06 esc. 2 |

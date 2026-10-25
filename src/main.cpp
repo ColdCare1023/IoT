@@ -154,7 +154,12 @@ static core::RegistroLectura capturar() {
     const uint32_t abiertaS = mc38.segundosAbiertaEnVentana();
     const uint32_t rachaS = mc38.rachaSegundos();
     r.puertaAbiertaS = (uint16_t)(abiertaS > 65535u ? 65535u : abiertaS);
-    r.puertaRachaS = rachaS >= UMBRAL_PUERTA_PROLONGADA_S ? (uint16_t)(rachaS > 65535u ? 65535u : rachaS) : 0;
+    // HU-35: la apertura en curso viaja desde el primer segundo, no solo
+    // pasado un umbral. `door_open_s` solo cuenta dentro de la ventana de
+    // muestreo y nunca supera el intervalo, así que no sirve para decir
+    // cuánto lleva abierta la puerta. El umbral del aviso lo aplica el
+    // backend (PUERTA_UMBRAL_PROLONGADA_SEGUNDOS).
+    r.puertaRachaS = (uint16_t)(rachaS > 65535u ? 65535u : rachaS);
     mc38.cerrarVentana();
 #endif
 
@@ -862,8 +867,9 @@ void setup() {
 
     // IOT-005: con la identidad bloqueada no se entrega token al cliente MQTT:
     // queda "no aprovisionado" (fallo cerrado) y las lecturas siguen en LittleFS.
+    // g_bootId ya está calculado (arriba): el LWT lleva el arranque de esta sesión (HU-13).
     mqtt.configurar(g_config.mqttHost, g_config.deviceId,
-                    g_config.identidadBloqueada ? String() : g_config.mqttToken);
+                    g_config.identidadBloqueada ? String() : g_config.mqttToken, g_bootId);
     // IOT-006: con certificado de cliente el broker liga la conexión a la clave
     // del nodo; el token por sí solo deja de bastar donde el backend lo exige.
     if (!g_config.identidadBloqueada) {
