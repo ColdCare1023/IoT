@@ -187,8 +187,10 @@ Cada decisión indica el requisito que la motiva y lo que se sacrifica.
   si declara usos extendidos, `clientAuth` (`src/tls/IdentidadTLS.cpp`). Al arrancar se vuelve a validar;
   si no sirve, el nodo conecta sin él.
 - **Broker y backend.** EMQX local pide certificado (`verify_peer`, sin exigirlo). La identidad del nodo la
-  fija la autenticación integrada de EMQX (usuario = device_id, contraseña = token, aprovisionada por el
-  backend con la API del broker; revocar o rotar sigue cortando al nodo). El backend ya no contrasta el CN
+  fija la autenticación integrada de EMQX (usuario = device_id, contraseña = token). El backend emite y
+  expulsa sesiones por API; el usuario lo crea o retira el backend solo en EMQX 5 completo o Dedicated, y a
+  mano en la consola en EMQX Serverless (cuya API no tiene endpoints de usuarios). Revocar o rotar sigue
+  cortando al nodo. El backend ya no contrasta el CN
   del certificado con el device_id: la vinculación certificado–dispositivo solo sería exigible fuera de
   EMQX Serverless, con la configuración del listener y de la autorización del broker.
 - **Verificado.** En el equipo de desarrollo, con la misma versión de mbedTLS del core (3.6.6): clave, CSR
