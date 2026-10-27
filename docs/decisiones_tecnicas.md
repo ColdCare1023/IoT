@@ -297,4 +297,16 @@ Cada decisión indica el requisito que la motiva y lo que se sacrifica.
   (`docs/evidencias/HU-44_rotacion_relevo_evidencia.md`, sección 6).
 - **Pendiente en hardware.** Llenar el buffer hasta la saturación para confirmar que entran las 30 000
   lecturas.
+- **Llenado rápido en el banco.** A intervalo real, 30 000 lecturas tardan días (a 10 s, unas 83 h). El
+  comando de consola `buffer llenar <n>` (y `buffer cancelar`) escribe `n` registros **sintéticos** desde la
+  tarea de captura, en tandas de 20 cada 50 ms, sin pasar de la capacidad. Cada uno copia la última captura
+  real con 5,00 °C y `"simulated": true`, y sigue el `seq_no` del arranque.
+  - Solo existe en `esp32dev` (`COMANDOS_BANCO=1`). `demo` y `produccion` lo anulan con
+    `-UCOMANDOS_BANCO`, y `config.h` corta la compilación si llegara a activarse con
+    `EXIGIR_CA_EMBEBIDA`.
+  - El backend solo acepta lecturas `simulated` de un dispositivo dado de alta como demo (BE-015). El ensayo
+    se hace con un `device_id` de banco aparte; así los sintéticos nunca entran en la curva del equipo real.
+    En un equipo normal se rechazan y el nodo los pasa a cuarentena.
+  - Cada uso se informa como `config_modificada` (`clave` = `buffer_sintetico`), y la consola lo marca como
+    comando que modifica (exige `desbloquear` si hay clave de servicio).
 
