@@ -50,3 +50,5 @@
 ## 5. Pendiente / fuera de alcance de esta evidencia
 - Revocación ejecutada desde la gestión de dispositivos del backend y su auditoría (escenarios 1 y 3): capa Cloud.
 - Defecto encontrado en esta prueba y corregido (commit `fix(HU-44)`): el nodo no recogía el token nuevo si estaba desconectado.
+- Rotación con token de relevo y rotación por compromiso contra el backend FastAPI real (27/10/2026): ver
+  `HU-44_rotacion_relevo_evidencia.md`.

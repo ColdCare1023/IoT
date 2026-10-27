@@ -253,8 +253,11 @@ Cada decisión indica el requisito que la motiva y lo que se sacrifica.
   `docs/operacion/HU-44_rotacion_y_revocacion.md`).
 - **Revocación.** No usa relevo: se retira el usuario en la consola y el backend rechaza la telemetría del
   nodo mientras tanto (revocación a nivel de aplicación).
-- **Verificado.** Pruebas nativas de la decisión (`test_credenciales.cpp`); `esp32dev` compila.
-  **Pendiente en hardware** contra EMQX: el ciclo completo con captura del log del nodo.
+- **Verificado.** Pruebas nativas de la decisión (`test_credenciales.cpp`); `esp32dev` compila. En hardware
+  (27/10/2026) contra el EMQX local con el backend en modo manual: rotación preventiva y por compromiso
+  completas, relevo rechazado con la consola pendiente y aceptado al confirmar, 28/28 lecturas retenidas
+  entregadas (`docs/evidencias/HU-44_rotacion_relevo_evidencia.md`).
+  **Pendiente** contra EMQX Cloud Serverless: el mismo ciclo editando la consola real.
 
 ## ADR-18 · Particiones de 4 MB: más espacio de aplicación para OTA, LittleFS medido (A-2)
 
@@ -279,6 +282,9 @@ Cada decisión indica el requisito que la motiva y lo que se sacrifica.
   menor).
 - **Costo.** Cambiar la tabla exige flasheo por USB (una OTA no la cambia) y borra LittleFS. Se hace ahora,
   antes del piloto y antes de quemar los eFuses del entorno `produccion`.
-- **Pendiente en hardware.** Leer `fs_total_bytes` en la placa y llenar el buffer hasta la saturación para
-  confirmar que entran las 30 000 lecturas.
+- **Medido en la placa (27/10/2026).** `fs_total_bytes = 1 507 328 B` (1472 KB) en el primer `estado_nodo`;
+  con la CA local, `esp32dev` 88,9 %, `demo` 90,2 %, `produccion` 88,0 %
+  (`docs/evidencias/HU-44_rotacion_relevo_evidencia.md`, sección 6).
+- **Pendiente en hardware.** Llenar el buffer hasta la saturación para confirmar que entran las 30 000
+  lecturas.
 
