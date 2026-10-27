@@ -10,6 +10,7 @@
 #include "../config.h"
 #include "../core/Ack.h"
 #include "../core/Ota.h"
+#include "../core/Posesion.h"
 #include "../core/Backoff.h"
 
 /**
@@ -75,6 +76,8 @@ public:
     bool tomarOrdenOTA(core::OrdenOTA& orden);
     /// Motivo de la última orden OTA rechazada al validarla ("" si ninguna).
     bool tomarRechazoOTA(std::string& motivo);
+    /// HU-44: desafío de posesión recibido en `.../ack` (el último gana).
+    bool tomarDesafioPosesion(std::string& nonce);
     bool aprovisionado() const { return _aprovisionado; }
     int ultimoCodigoRetorno() { return (int)_mqtt.returnCode(); }
     int ultimoError() { return (int)_mqtt.lastError(); }
@@ -110,6 +113,7 @@ private:
     core::OrdenOTA _ordenOta;
     bool _hayOrdenOta = false;
     std::string _rechazoOta;
+    std::string _nonceDesafio;
 };
 
 #endif  // MQTT_MANAGER_H

@@ -36,6 +36,7 @@
 #include "core/Json.h"
 #include "core/Payload.h"
 #include "core/Pem.h"
+#include "core/Posesion.h"
 #include "core/Registro.h"
 #include "core/Tiempo.h"
 #include "network/MQTTManager.h"
@@ -236,6 +237,20 @@ static void revisarBotonDemo() {
 }
 #endif
 
+// HU-44: última captura, para la muestra `lectura_vigente` que publica el
+// núcleo de red mientras el backend retiene la telemetría.
+static portMUX_TYPE g_muxUltima = portMUX_INITIALIZER_UNLOCKED;
+static core::RegistroLectura g_ultimaCaptura;
+static bool g_hayUltimaCaptura = false;
+
+static bool leerUltimaCaptura(core::RegistroLectura& r) {
+    portENTER_CRITICAL(&g_muxUltima);
+    const bool hay = g_hayUltimaCaptura;
+    if (hay) r = g_ultimaCaptura;
+    portEXIT_CRITICAL(&g_muxUltima);
+    return hay;
+}
+
 static void taskCaptura(void*) {
     suscribirTareaAlWatchdog("Captura");
     TickType_t ultimo = xTaskGetTickCount();
@@ -243,6 +258,10 @@ static void taskCaptura(void*) {
 
     for (;;) {
         const core::RegistroLectura r = capturar();
+        portENTER_CRITICAL(&g_muxUltima);
+        g_ultimaCaptura = r;
+        g_hayUltimaCaptura = true;
+        portEXIT_CRITICAL(&g_muxUltima);
         const core::ResultadoGuardado g = buffer.guardar(r);
         if (g == core::ResultadoGuardado::Guardado) g_capturoLectura = true;  // IOT-004
         if (g != core::ResultadoGuardado::Guardado) {
@@ -721,6 +740,32 @@ static void verificarArranqueOTA() {
     }
 }
 
+/// HU-44: responde el desafío de posesión firmando con el token de la sesión
+/// actual. Si el broker rechazó el relevo y el nodo entró con el token
+/// anterior, la firma no coincide y el backend sigue reteniendo: eso es lo que
+/// se quiere cuando la consola no se cambió.
+static void atenderDesafioPosesion() {
+    std::string nonce;
+    if (!mqtt.tomarDesafioPosesion(nonce)) return;
+    core::ObjetoJSON d;
+    d.cadena("nonce", nonce);
+    d.cadena("hmac", core::respuestaPosesion(std::string(mqtt.token().c_str()),
+                                             std::string(g_config.deviceId.c_str()), nonce));
+    publicarEventoDirecto("prueba_posesion", d.cerrar());
+    LOG_I("MQTT", "Desafio de posesion respondido.");
+}
+
+/// HU-44: con el drenaje detenido por falta de acuse, publica la última
+/// captura (una vez por lectura) para que el backend aplique la regla 2-8 °C
+/// aunque retenga la telemetría. No libera ni reemplaza ningún registro.
+static void publicarLecturaVigente(bool drenajeDetenido, uint32_t& ultimoSeqPublicado) {
+    if (!drenajeDetenido || buffer.pendientes() == 0) return;
+    core::RegistroLectura r;
+    if (!leerUltimaCaptura(r) || r.seqNo == ultimoSeqPublicado) return;
+    ultimoSeqPublicado = r.seqNo;
+    publicarEventoDirecto("lectura_vigente", core::detalleLecturaVigente(r));
+}
+
 /// IOT-004: ejecuta una orden OTA recibida (validada al recibirla).
 static void atenderOrdenOTA() {
     std::string motivo;
@@ -768,6 +813,7 @@ static void taskRed(void*) {
     core::Backoff backoffDrenaje(DRENAJE_REINTENTO_BASE_MS, DRENAJE_REINTENTO_MAX_MS, 2);
     uint32_t ultimoDrenajeMs = 0;
     bool drenajeEnEspera = false;
+    uint32_t ultimoSeqVigente = 0;  // HU-44: última muestra `lectura_vigente`
     bool sesionAnunciada = false;
     uint32_t ultimaRevisionTokenMs = millis();
     uint32_t ultimoEstadoMs = millis();
@@ -850,6 +896,7 @@ static void taskRed(void*) {
         }
         mqtt.loop();
         atenderOrdenOTA();
+        atenderDesafioPosesion();
 
         publicarEventosPendientes();
 
@@ -878,6 +925,8 @@ static void taskRed(void*) {
                       (unsigned long)buffer.pendientes());
             }
         }
+
+        publicarLecturaVigente(drenajeEnEspera, ultimoSeqVigente);
 
         // HU-48: latido de estado (pendientes, pérdidas, enlace).
         if (millis() - ultimoEstadoMs >= INTERVALO_ESTADO_MS) {

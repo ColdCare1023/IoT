@@ -184,6 +184,13 @@ bool MQTTManager::tomarRechazoOTA(std::string& motivo) {
     return true;
 }
 
+bool MQTTManager::tomarDesafioPosesion(std::string& nonce) {
+    if (_nonceDesafio.empty()) return false;
+    nonce = _nonceDesafio;
+    _nonceDesafio.clear();
+    return true;
+}
+
 void MQTTManager::_alRecibir(String& topico, String& payload) {
     if (topico == _topicoOta) {
         core::OrdenOTA orden;
@@ -197,6 +204,11 @@ void MQTTManager::_alRecibir(String& topico, String& payload) {
         return;
     }
     if (topico != _topicoAck) return;
+    std::string nonce;
+    if (core::parsearDesafioPosesion(std::string(payload.c_str()), std::string(_deviceId.c_str()), nonce)) {
+        _nonceDesafio = nonce;
+        return;
+    }
     core::AckLogico ack;
     if (!core::parsearAck(std::string(payload.c_str()), ack) ||
         ack.deviceId != std::string(_deviceId.c_str())) {
