@@ -248,16 +248,26 @@ Cada decisión indica el requisito que la motiva y lo que se sacrifica.
   4. Backend: `POST /api/dispositivos/{id}/broker/confirmar`. El backend expulsa la sesión; el nodo
      reconecta, prueba el relevo, el broker lo acepta y el nodo borra el token viejo (evento
      `credencial_rotada`, `origen: relevo`).
-  Si la rotación fue por **compromiso** (`causa: compromiso`), entre los pasos 1 y 4 el backend retiene la
-  telemetría sin acuse: el nodo la conserva en LittleFS y la entrega tras el paso 4 (Backend
+  Si la rotación fue por **compromiso** (`causa: compromiso`), desde el paso 1 el backend retiene la
+  telemetría sin acuse: el nodo la conserva en LittleFS. La retención **no** termina en el paso 4: el
+  administrador puede confirmar sin haber cambiado la consola, y entonces el broker seguiría aceptando el
+  token filtrado. Termina cuando el nodo responde un desafío (nonce) firmado con HMAC-SHA256 sobre una clave
+  derivada del token **de su sesión** (`core::respuestaPosesion`, contrato 2.1). Si el broker rechazó el
+  relevo, el nodo está conectado con el token anterior, la firma no coincide y la retención sigue.
+  Mientras dura, con el drenaje detenido, el nodo publica `lectura_vigente` con su última captura (una vez
+  por lectura) para que el backend aplique la regla 2-8 °C (Backend
   `docs/operacion/HU-44_rotacion_y_revocacion.md`).
 - **Revocación.** No usa relevo: se retira el usuario en la consola y el backend rechaza la telemetría del
   nodo mientras tanto (revocación a nivel de aplicación).
-- **Verificado.** Pruebas nativas de la decisión (`test_credenciales.cpp`); `esp32dev` compila. En hardware
-  (27/10/2026) contra el EMQX local con el backend en modo manual: rotación preventiva y por compromiso
-  completas, relevo rechazado con la consola pendiente y aceptado al confirmar, 28/28 lecturas retenidas
-  entregadas (`docs/evidencias/HU-44_rotacion_relevo_evidencia.md`).
-  **Pendiente** contra EMQX Cloud Serverless: el mismo ciclo editando la consola real.
+- **Verificado.** Pruebas nativas de la decisión (`test_credenciales.cpp`) y de la prueba de posesión
+  (`test_posesion.cpp`: vectores de RFC 4231 y la misma firma que calcula el backend); `esp32dev`, `demo` y
+  `produccion` compilan. En hardware (27/10/2026) contra el EMQX local con el backend en modo manual,
+  firmware `a220a80`: rotación preventiva y por compromiso completas, relevo rechazado con la consola
+  pendiente y aceptado al confirmar, 28/28 lecturas retenidas entregadas
+  (`docs/evidencias/HU-44_rotacion_relevo_evidencia.md`). Esa prueba es anterior a la prueba de posesión
+  (`9045d9d`, `dc8e179`).
+  **Pendiente:** la prueba de posesión y las pruebas C-G en banco, y el ciclo completo contra EMQX Cloud
+  Serverless editando la consola real (Backend `docs/evidencias/HU-44_evidencia.md`).
 
 ## ADR-18 · Particiones de 4 MB: más espacio de aplicación para OTA, LittleFS medido (A-2)
 

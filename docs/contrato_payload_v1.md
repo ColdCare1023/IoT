@@ -103,6 +103,27 @@ El `PUBACK` de MQTT **no** libera nada.
 Si PostgreSQL falla, **no** publicar acuse (HU-22 esc. 3).
 Se aceptan también `estado` y los valores `commit_confirmado` / `duplicado` / `rechazado`.
 
+### 2.1 Desafío de posesión (`.../ack`) — backend → nodo (HU-44)
+
+Durante una rotación por compromiso, con la consola del broker ya confirmada, el backend publica en el
+mismo tópico de acuses (sin reglas ACL nuevas):
+
+```json
+{"device_id":"ESP32_FARMACIA_01","tipo":"desafio_posesion","nonce":"<hex de 32 caracteres>"}
+```
+
+El nodo responde con el evento `prueba_posesion` (abajo), firmando con el token **de su sesión actual**:
+
+```
+clave     = SHA-256("coldcare-pop-v1:" + token)
+respuesta = HMAC-SHA256(clave, nonce + ":" + device_id)   (hex en minúsculas)
+```
+
+Si el broker rechazó el relevo y el nodo entró con el token anterior, la firma no coincide y el backend
+sigue reteniendo. El nonce caduca a los 10 min y sirve una vez; el backend lo reenvía (como mucho cada
+30 s, o enseguida tras un `online`) mientras siga sin prueba. Un mensaje del tópico `.../ack` con
+`tipo` distinto de `desafio_posesion` es un acuse normal.
+
 ## 3. Eventos (`.../eventos`)
 
 ```json
@@ -121,6 +142,8 @@ Se aceptan también `estado` y los valores `commit_confirmado` / `duplicado` / `
 | `registros_en_cuarentena` | `corruptos`, `rechazados_backend`, `invalidos`, `cuarentena_total` | HU-06 esc. 2 |
 | `wifi_reconexion_prolongada` | `intentos_fallidos`, `duracion_s`, `umbral_intentos` | HU-08 esc. 3 |
 | `credencial_rotada` | — | HU-44 esc. 2 |
+| `prueba_posesion` | `nonce`, `hmac` (respuesta al desafío de 2.1) | HU-44 |
+| `lectura_vigente` | `boot_id`, `seq_no`, `temperatura_interna` (null con sensor en falla), `captured_at` (null sin SNTP), `time_quality`, `uptime_s`. Solo mientras el drenaje está detenido por falta de acuse, una vez por captura: el backend aplica la regla 2-8 °C durante la retención; no la persiste como lectura | HU-44 |
 | `puerta` | `door_open` (true = abierta); `occurred_at` es la hora del cambio | HU-04 esc. 1 |
 | `conmutacion_respaldo` / `suministro_restablecido` | `desde`/`hacia` · `duracion_respaldo_s` | HU-52 esc. 1 (solo con sensado) |
 | `respaldo_autonomia_critica` | `transcurrido_s`, `autonomia_medida_min`, `base` | HU-52 esc. 3 (estimación) |
