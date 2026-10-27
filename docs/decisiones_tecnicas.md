@@ -265,7 +265,7 @@ Cada decisión indica el requisito que la motiva y lo que se sacrifica.
   firmware `a220a80`: rotación preventiva y por compromiso completas, relevo rechazado con la consola
   pendiente y aceptado al confirmar, 28/28 lecturas retenidas entregadas
   (`docs/evidencias/HU-44_rotacion_relevo_evidencia.md`). Esa prueba es anterior a la prueba de posesión
-  (`9045d9d`, `dc8e179`).
+  (`1aea6bd`, `83d8f78`).
   **Pendiente:** la prueba de posesión y las pruebas C-G en banco, y el ciclo completo contra EMQX Cloud
   Serverless editando la consola real (Backend `docs/evidencias/HU-44_evidencia.md`).
 
