@@ -4,7 +4,8 @@ Cada decisión indica el requisito que la motiva y lo que se sacrifica.
 
 ## ADR-01 · Buffer offline en registros binarios de 40 B, no en un JSON por archivo
 
-- **Contexto.** HU-06 pide aguantar desconexiones prolongadas en la partición LittleFS de 1,6 MB.
+- **Contexto.** HU-06 pide aguantar desconexiones prolongadas en la partición LittleFS (1,6 MB al decidirlo;
+  1472 KB desde ADR-18).
   El firmware anterior guardaba un JSON (~500 B) por archivo con tope de 200 archivos (≈100 min a 30 s).
   En LittleFS cada archivo pequeño consume además metadatos propios.
 - **Decisión.** Cada lectura se guarda como registro de 40 B con CRC32, en segmentos de 100 registros
@@ -112,7 +113,7 @@ Cada decisión indica el requisito que la motiva y lo que se sacrifica.
 - **Verificado.** Compilación de `esp32dev` y `demo` sin avisos y las 77 pruebas nativas.
 - **Pendiente en hardware.** Ensayo de duración en el banco (watchdog, reconexión TLS contra EMQX,
   buffer LittleFS existente, consumo de RAM en el handshake). El ocupado de flash sube a ~89 % de la
-  partición de aplicación (1216 KB): hay margen, pero conviene vigilarlo antes de añadir OTA.
+  partición de aplicación (1216 KB entonces; 1280 KB desde ADR-18).
 
 ## ADR-12 · Hora SNTP no autenticada (IOT-007)
 
@@ -170,8 +171,8 @@ Cada decisión indica el requisito que la motiva y lo que se sacrifica.
 - **Resultado.** Solo el nodo cierra el despliegue en el backend (`ota_confirmada`, `ota_fallida`,
   `ota_rechazada`, `ota_revertida`).
 - **Verificado.** Pruebas nativas de la orden, versiones, SHA-256 por partes (vectores FIPS) y decisión de
-  arranque; `esp32dev`, `demo` y `produccion` compilan. La aplicación ocupa ~92 % de su partición (1216 KB),
-  y la imagen firmada de producción añade un bloque de firma de 4 KB.
+  arranque; `esp32dev`, `demo` y `produccion` compilan. La aplicación ocupa el 88-90 % de su partición
+  (1280 KB, ADR-18), y la imagen firmada de producción añade un bloque de firma de 4 KB.
 - **Pendiente en hardware.** Descarga real contra un servidor HTTPS, reinicio, confirmación y reversión
   forzada (imagen que no conecta) en una placa de laboratorio.
 
@@ -254,3 +255,30 @@ Cada decisión indica el requisito que la motiva y lo que se sacrifica.
   nodo mientras tanto (revocación a nivel de aplicación).
 - **Verificado.** Pruebas nativas de la decisión (`test_credenciales.cpp`); `esp32dev` compila.
   **Pendiente en hardware** contra EMQX: el ciclo completo con captura del log del nodo.
+
+## ADR-18 · Particiones de 4 MB: más espacio de aplicación para OTA, LittleFS medido (A-2)
+
+- **Contexto.** Con app0/app1 de 1216 KB la imagen ocupaba el 92,6-94,8 % de su partición
+  (`produccion`, `esp32dev`, `demo`). Con ese margen (≈ 65-90 KB) una OTA con algo más de código podía no
+  caber, y la OTA exige que la imagen nueva entre en la otra ranura. LittleFS tenía 1600 KB, más de lo que
+  usa el buffer.
+- **Cálculo de B.** El buffer de 30 000 lecturas son 300 segmentos de 100 × 40 B = 4000 B; cada uno ocupa
+  un bloque de 4096 B. A eso se suman la reserva libre que exige `guardar` (16 KB, `BUFFER_RESERVA_BYTES`)
+  y 16 bloques para metadatos de directorio (300 entradas) y copia en escritura:
+  `core::bytesMinimosParticion` = (300 + 16) × 4096 + 16 384 = **1 310 720 B (1280 KB)**. Con menos, la
+  cola se satura antes de su capacidad nominal (rechaza escribir cuando quedan < 16 KB libres).
+- **Decisión.** `partitions.csv`: app0/app1 **1280 KB** (`0x140000`), LittleFS **1472 KB** (`0x170000`,
+  48 bloques de holgura). `partitions_produccion.csv` (tabla en `0x10000` y `nvs_keys`): app0/app1
+  1280 KB, LittleFS **1408 KB** (`0x160000`, 32 bloques de holgura). `OTA_TAMANO_MAXIMO` = `0x140000` en el
+  nodo y en el backend.
+- **Resultado.** `esp32dev` 88,8 %, `demo` 90,1 %, `produccion` 88,1 % (1 154 399 B, medido con una CA
+  pública temporal). Margen para OTA: 126-156 KB.
+- **Medición en el nodo.** `estado_nodo` publica `fs_total_bytes` (B real de LittleFS montado) y
+  `fs_libres_bytes`. Al arrancar, el nodo registra un error si B < 1280 KB. El Paper debe citar el
+  `fs_total_bytes` del nodo del piloto y N = 30 000 (o ⌊(B − reserva − metadatos)/4096⌋ × 100 si B fuese
+  menor).
+- **Costo.** Cambiar la tabla exige flasheo por USB (una OTA no la cambia) y borra LittleFS. Se hace ahora,
+  antes del piloto y antes de quemar los eFuses del entorno `produccion`.
+- **Pendiente en hardware.** Leer `fs_total_bytes` en la placa y llenar el buffer hasta la saturación para
+  confirmar que entran las 30 000 lecturas.
+

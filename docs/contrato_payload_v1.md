@@ -146,7 +146,7 @@ Se aceptan también `estado` y los valores `commit_confirmado` / `duplicado` / `
 
 El nodo la acepta solo si `device_id` es el suyo, `version` es `X.Y.Z` y **posterior** a la que
 corre, `url` es HTTPS (≤ 256 caracteres, sin espacios ni comillas), `sha256` tiene 64 hex en
-minúsculas y `tamano` cabe en la partición de aplicación (≤ `0x130000`). Descarga sin seguir
+minúsculas y `tamano` cabe en la partición de aplicación (≤ `0x140000`, 1280 KB). Descarga sin seguir
 redirecciones, con la misma CA de confianza que usa para el broker (el servidor de descargas debe
 estar en el paquete de `data/certs/root_ca.pem`), exige `Content-Length == tamano` y solo activa la
 imagen si su SHA-256 coincide con la orden. Con Secure Boot (entorno `produccion`) el bootloader

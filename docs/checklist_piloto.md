@@ -39,11 +39,13 @@ Cada punto deja evidencia (captura o log) en `docs/evidencias/`.
 
 - [ ] Ensayo completo del procedimiento de ADR-17 (token de relevo) contra la instancia EMQX real.
 
-## Partición (A-2)
+## Partición (A-2, ADR-18)
 
-`partitions.csv`: app0/app1 1216 KB y LittleFS 1600 KB; el buffer de 30 000 lecturas (300 archivos × 100)
-necesita la LittleFS actual, así que agrandar las particiones de aplicación reduciría la capacidad del
-buffer. Orden de preferencia si la imagen supera el 95 %: (1) recortar el binario (`CORE_DEBUG_LEVEL=0` ya
-está; quitar `MODO_DEMO` del binario de producción; revisar librerías), (2) solo si no alcanza, mover
-espacio de LittleFS a las aplicaciones y **medir de nuevo B** (capacidad real de LittleFS) para recalcular
-N = ⌊B/40⌋ en el Paper.
+`partitions.csv`: app0/app1 1280 KB y LittleFS 1472 KB (producción: 1408 KB). El buffer de 30 000
+lecturas necesita 1280 KB de LittleFS (`core::bytesMinimosParticion`).
+
+- [ ] Flashear por USB con la tabla nueva (borra LittleFS; una OTA no cambia la tabla).
+- [ ] Anotar `fs_total_bytes` del primer `estado_nodo` del nodo del piloto: es el B que cita el Paper.
+- [ ] Confirmar que el log de arranque no muestra «LittleFS de … KB < 1280 KB necesarios».
+- [ ] Ensayo de saturación: con el broker caído, llenar el buffer (en banco, con `intervalo_s` corto) y
+      comprobar que `capacidad` = 30 000 y que la primera pérdida aparece en la lectura 30 001.
