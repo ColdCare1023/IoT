@@ -74,6 +74,16 @@
   #define MODO_DEMO 0
 #endif
 
+// Comandos de banco (solo entorno `esp32dev`): `buffer llenar <n>` escribe
+// registros SINTÉTICOS ("simulated": true) para el ensayo de saturación del
+// ADR-18. `produccion` y `demo` lo anulan con -UCOMANDOS_BANCO.
+#ifndef COMANDOS_BANCO
+  #define COMANDOS_BANCO 0
+#endif
+#if COMANDOS_BANCO && defined(EXIGIR_CA_EMBEBIDA) && EXIGIR_CA_EMBEBIDA
+  #error "COMANDOS_BANCO no puede compilarse en el firmware de produccion"
+#endif
+
 // =========================================================================
 // Muestreo
 // =========================================================================

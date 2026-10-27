@@ -34,6 +34,7 @@
 #include "core/Consola.h"
 #include "core/Credenciales.h"
 #include "core/Json.h"
+#include "core/LlenadoBanco.h"
 #include "core/Payload.h"
 #include "core/Pem.h"
 #include "core/Posesion.h"
@@ -251,6 +252,42 @@ static bool leerUltimaCaptura(core::RegistroLectura& r) {
     return hay;
 }
 
+#if COMANDOS_BANCO
+// ADR-18: registros sintéticos pendientes de `buffer llenar <n>`. Los escribe
+// la tarea de captura (única dueña de g_seqNo), por tandas, entre capturas.
+static volatile uint32_t g_bancoPorLlenar = 0;
+static constexpr uint32_t BANCO_TANDA = 20;  // por paso de 50 ms
+
+static void llenarBufferBanco() {
+    if (g_bancoPorLlenar == 0) return;
+    core::RegistroLectura plantilla;
+    if (!leerUltimaCaptura(plantilla)) return;
+    const uint32_t tanda =
+        core::tandaLlenadoBanco(g_bancoPorLlenar, buffer.pendientes(), buffer.capacidad(), BANCO_TANDA);
+    for (uint32_t i = 0; i < tanda; ++i) {
+        const core::RegistroLectura r =
+            core::registroSintetico(plantilla, ++g_seqNo, uptimeSegundos(), epochAhora());
+        if (buffer.guardar(r) != core::ResultadoGuardado::Guardado) {
+            LOG_E("Banco", "No se pudo escribir el registro sintetico seq=%lu: llenado detenido.",
+                  (unsigned long)r.seqNo);
+            g_bancoPorLlenar = 0;
+            return;
+        }
+        g_bancoPorLlenar = g_bancoPorLlenar - 1;
+        if (r.seqNo % 1000 == 0) {
+            Serial.printf("[BANCO] pendientes=%lu/%lu faltan=%lu\n", (unsigned long)buffer.pendientes(),
+                          (unsigned long)buffer.capacidad(), (unsigned long)g_bancoPorLlenar);
+        }
+    }
+    if (tanda == 0 || g_bancoPorLlenar == 0) {
+        Serial.printf("[BANCO] llenado terminado: pendientes=%lu/%lu ultimo_seq=%lu\n",
+                      (unsigned long)buffer.pendientes(), (unsigned long)buffer.capacidad(),
+                      (unsigned long)g_seqNo);
+        g_bancoPorLlenar = 0;
+    }
+}
+#endif
+
 static void taskCaptura(void*) {
     suscribirTareaAlWatchdog("Captura");
     TickType_t ultimo = xTaskGetTickCount();
@@ -289,6 +326,9 @@ static void taskCaptura(void*) {
             muestrearEnergia();  // conmutación a respaldo con timestamp (HU-52 esc. 1)
 #if MODO_DEMO
             revisarBotonDemo();
+#endif
+#if COMANDOS_BANCO
+            llenarBufferBanco();
 #endif
             alimentarWatchdog();
         }
@@ -439,6 +479,9 @@ static void atenderConsola() {
 #if MODO_DEMO
                            " | demo excursion <temp_C> <n_lecturas>"
 #endif
+#if COMANDOS_BANCO
+                           " | buffer llenar <n> | buffer cancelar"
+#endif
             );
             Serial.println("Claves NVS: wifi_ssid wifi_pass mqtt_host mqtt_token mqtt_relevo device_id "
                            "intervalo_s clave_servicio");
@@ -528,6 +571,31 @@ static void atenderConsola() {
                 Serial.printf("[DEMO] %.2f C SIMULADOS en las proximas %ld lecturas.\n", temp, n);
             } else {
                 Serial.println("Uso: demo excursion <temp_C> <n_lecturas 1..20>");
+            }
+#endif
+#if COMANDOS_BANCO
+        } else if (verbo == "buffer") {
+            // ADR-18: ensayo de saturación. Solo con un device_id de banco dado
+            // de alta como demo: en un equipo normal el backend rechaza las
+            // lecturas `simulated` (BE-015) y el nodo las pasa a cuarentena.
+            long n = 0;
+            if (resto == "cancelar") {
+                g_bancoPorLlenar = 0;
+                Serial.println("[BANCO] llenado cancelado.");
+            } else if (sscanf(resto.c_str(), "llenar %ld", &n) == 1 && n > 0 &&
+                       (uint32_t)n <= buffer.capacidad()) {
+                g_bancoPorLlenar = (uint32_t)n;
+                Serial.printf("[BANCO] %ld registros SINTETICOS (simulated=true, 5.00 C) desde boot=%lu "
+                              "seq=%lu. 'buffer cancelar' para detener.\n",
+                              n, (unsigned long)g_bootId, (unsigned long)(g_seqNo + 1));
+                core::ObjetoJSON d;
+                d.cadena("clave", "buffer_sintetico");
+                d.cadena("accion", "llenar");
+                d.sinSigno("registros", (uint32_t)n);
+                encolarEvento("config_modificada", d.cerrar());
+            } else {
+                Serial.printf("Uso: buffer llenar <n 1..%lu> | buffer cancelar\n",
+                              (unsigned long)buffer.capacidad());
             }
 #endif
         } else {
