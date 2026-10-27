@@ -31,7 +31,7 @@ struct VersionFirmware {
 bool parsearVersion(const std::string& texto, VersionFirmware& version);
 bool esPosterior(const VersionFirmware& candidata, const VersionFirmware& actual);
 
-constexpr uint32_t OTA_TAMANO_MAXIMO = 0x130000;  // partición de aplicación (1216 KB)
+constexpr uint32_t OTA_TAMANO_MAXIMO = 0x140000;  // partición de aplicación (1280 KB)
 
 struct OrdenOTA {
     std::string version;

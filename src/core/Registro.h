@@ -14,7 +14,7 @@ namespace core {
  * POR QUÉ BINARIO Y NO EL JSON
  * ----------------------------
  * El buffer offline debe aguantar desconexiones largas en una partición de
- * 1,6 MB. Un JSON por archivo ocupa ~500 B y, en LittleFS, cada archivo
+ * 1472 KB (1,6 MB cuando se decidió). Un JSON por archivo ocupa ~500 B y, en LittleFS, cada archivo
  * pequeño cuesta metadatos propios: la capacidad real quedaba en unas pocas
  * horas. Un registro de 40 B con CRC32 da ~30 000 lecturas (≈10 días a 30 s)
  * y hace trivial detectar un registro corrupto tras un corte de energía.

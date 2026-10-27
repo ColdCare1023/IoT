@@ -114,7 +114,7 @@
 #define TOPICO_PREFIJO "farmacias/"
 
 // =========================================================================
-// Buffer offline (LittleFS, partición "littlefs" de 1,6 MB)
+// Buffer offline (LittleFS, partición "littlefs" de 1472 KB; 1408 KB en producción)
 // =========================================================================
 #define LITTLEFS_ETIQUETA_PARTICION "littlefs"
 #ifndef BUFFER_REGISTROS_POR_SEGMENTO

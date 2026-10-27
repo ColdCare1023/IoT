@@ -8,12 +8,13 @@
 #     montaje de LittleFS sobre partición cifrada en una placa de laboratorio.
 #   - app y otadata se cifran siempre; nvs no admite la bandera (usa NVS Encryption).
 #
-#   app0/app1 1216 KB (OTA, IOT-004) · littlefs 1536 KB · 0x280000 + 0x180000 = 4 MB
+#   app0/app1 1280 KB (OTA, IOT-004) · littlefs 1408 KB · 0x2A0000 + 0x160000 = 4 MB
+#   (littlefs ≥ 1280 KB que exige el buffer de 30 000 lecturas: ver partitions.csv)
 #
 # Name,     Type, SubType,  Offset,   Size,     Flags
 nvs,        data, nvs,      0x11000,  0x6000,
 nvs_keys,   data, nvs_keys, 0x17000,  0x1000,
 otadata,    data, ota,      0x18000,  0x2000,
-app0,       app,  ota_0,    0x20000,  0x130000,
-app1,       app,  ota_1,    0x150000, 0x130000,
-littlefs,   data, spiffs,   0x280000, 0x180000, encrypted
+app0,       app,  ota_0,    0x20000,  0x140000,
+app1,       app,  ota_1,    0x160000, 0x140000,
+littlefs,   data, spiffs,   0x2A0000, 0x160000, encrypted

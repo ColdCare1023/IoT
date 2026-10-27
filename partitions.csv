@@ -10,16 +10,22 @@
 # La etiqueta debe ser exactamente "littlefs" y el subtipo "spiffs": es el
 # subtipo que el core Arduino-ESP32 usa para LittleFS (no hay subtipo propio).
 #
-# Reparto (coincide con lo documentado en IoT-documentacion_iot.md §2.3):
-#   app0     1216 KB  aplicación en ejecución
-#   app1     1216 KB  reservada para OTA (HU-46) — hoy sin usar
-#   littlefs 1600 KB  buffer offline FIFO + certificado CA
+# Reparto (27/10/2026: con 1216 KB la imagen ocupaba el 93-95 % de la
+# partición y una OTA con algo más de código ya no cabía):
+#   app0     1280 KB  aplicación en ejecución
+#   app1     1280 KB  segunda ranura para OTA (IOT-004)
+#   littlefs 1472 KB  buffer offline FIFO + cursor + cuarentena
 #
-# 0x270000 + 0x190000 = 0x400000 = 4 MB exactos, sin hueco final.
+# El buffer de 30 000 lecturas necesita 300 bloques de datos + reserva de
+# 16 KB + metadatos = 1280 KB (core::bytesMinimosParticion); 1472 KB deja 48
+# bloques de holgura para la copia en escritura de LittleFS. El firmware
+# avisa al arrancar si la partición queda por debajo.
+#
+# 0x290000 + 0x170000 = 0x400000 = 4 MB exactos, sin hueco final.
 #
 # Name,     Type, SubType, Offset,   Size,     Flags
 nvs,        data, nvs,     0x9000,   0x5000,
 otadata,    data, ota,     0xE000,   0x2000,
-app0,       app,  ota_0,   0x10000,  0x130000,
-app1,       app,  ota_1,   0x140000, 0x130000,
-littlefs,   data, spiffs,  0x270000, 0x190000,
+app0,       app,  ota_0,   0x10000,  0x140000,
+app1,       app,  ota_1,   0x150000, 0x140000,
+littlefs,   data, spiffs,  0x290000, 0x170000,
