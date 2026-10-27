@@ -55,7 +55,29 @@ void test_host_mqtt_solo_nombre_sin_esquema_ni_puerto(void) {
         "THERMOSAFE_IOT", "abc123.emqxsl.com:1883", "a1b2c3d4e5f60718"));
 }
 
+/// HU-44 (A-1): el relevo solo se prueba cuando el broker rechaza la credencial.
+void test_relevo_tras_rechazo_por_credencial(void) {
+    TEST_ASSERT_TRUE(core::debeUsarRelevo(core::CONNACK_CREDENCIALES_INVALIDAS, "token_viejo_123", "token_nuevo_456"));
+    TEST_ASSERT_TRUE(core::debeUsarRelevo(core::CONNACK_NO_AUTORIZADO, "token_viejo_123", "token_nuevo_456"));
+}
+
+void test_sin_rechazo_por_credencial_no_hay_relevo(void) {
+    // 0 = aceptado; 3 = servidor no disponible; -1 = sin red: no son culpa del token.
+    TEST_ASSERT_FALSE(core::debeUsarRelevo(0, "token_viejo_123", "token_nuevo_456"));
+    TEST_ASSERT_FALSE(core::debeUsarRelevo(3, "token_viejo_123", "token_nuevo_456"));
+    TEST_ASSERT_FALSE(core::debeUsarRelevo(-1, "token_viejo_123", "token_nuevo_456"));
+}
+
+void test_relevo_vacio_o_igual_no_se_usa(void) {
+    TEST_ASSERT_FALSE(core::debeUsarRelevo(core::CONNACK_NO_AUTORIZADO, "token_viejo_123", ""));
+    TEST_ASSERT_FALSE(core::debeUsarRelevo(core::CONNACK_NO_AUTORIZADO, "token_viejo_123", "token_viejo_123"));
+    TEST_ASSERT_FALSE(core::debeUsarRelevo(core::CONNACK_NO_AUTORIZADO, "token_viejo_123", "token_generado_en_emqx"));
+}
+
 void run_tests_credenciales(void) {
+    RUN_TEST(test_relevo_tras_rechazo_por_credencial);
+    RUN_TEST(test_sin_rechazo_por_credencial_no_hay_relevo);
+    RUN_TEST(test_relevo_vacio_o_igual_no_se_usa);
     RUN_TEST(test_host_mqtt_solo_nombre_sin_esquema_ni_puerto);
     RUN_TEST(test_los_marcadores_del_repositorio_no_valen_como_credencial);
     RUN_TEST(test_vacio_y_espacios_no_valen);

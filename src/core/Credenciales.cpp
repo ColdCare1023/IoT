@@ -49,4 +49,10 @@ bool aprovisionamientoCompleto(const std::string& ssid,
            credencialValida(mqttToken);
 }
 
+bool debeUsarRelevo(int codigoConnack, const std::string& tokenActual, const std::string& relevo) {
+    const bool rechazoPorCredencial =
+        codigoConnack == CONNACK_CREDENCIALES_INVALIDAS || codigoConnack == CONNACK_NO_AUTORIZADO;
+    return rechazoPorCredencial && credencialValida(relevo) && relevo != tokenActual;
+}
+
 }  // namespace core

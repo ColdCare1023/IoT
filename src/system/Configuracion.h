@@ -12,6 +12,8 @@
  *
  * Claves NVS (namespace "thermotrace"):
  *   wifi_ssid, wifi_pass, mqtt_host, mqtt_token  — credenciales
+ *   mqtt_relevo                                  — token nuevo cargado ANTES de cambiar el
+ *                                                  broker (HU-44, core::debeUsarRelevo)
  *   device_id                                    — reemplaza DEVICE_ID (no en el firmware demo)
  *   intervalo_s                                  — intervalo de muestreo (10..3600)
  *   svc_hash                                     — huella de la clave de servicio (IOT-002)
@@ -39,6 +41,13 @@ ConfiguracionNodo cargarConfiguracion();
 
 /// Relee solo el token (HU-44: rotación sin reiniciar). "" si no hay.
 String releerTokenMqtt();
+
+/// HU-44 (A-1): token de relevo ("" si no hay o no es válido).
+String leerTokenRelevo();
+/// Lo vuelve vigente (`mqtt_token`) y borra el relevo. False si NVS falla.
+bool promoverTokenRelevo(const String& relevo);
+/// Borra el relevo (ya es el token vigente).
+void descartarTokenRelevo();
 
 /// Lee boot_id de NVS, lo incrementa, lo persiste y lo devuelve (≥1).
 /// Devuelve 0 si NVS no está disponible (degradado: la captura sigue).

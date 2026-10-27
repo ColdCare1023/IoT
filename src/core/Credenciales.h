@@ -33,6 +33,23 @@ bool aprovisionamientoCompleto(const std::string& ssid,
                                const std::string& mqttHost,
                                const std::string& mqttToken);
 
+/**
+ * HU-44 (A-1): token de relevo para rotar sin dejar al nodo sin conexión.
+ *
+ * EMQX guarda UNA contraseña por usuario. Si el token nuevo se carga primero
+ * en la consola del broker, el nodo legítimo queda fuera hasta que alguien le
+ * escriba el token por la consola serie; si se carga primero en el nodo, queda
+ * fuera hasta que se actualice el broker. El relevo resuelve el orden: el token
+ * nuevo se deja ANTES en el nodo como `mqtt_relevo` (NVS: máx. 15 caracteres por clave) y el nodo sigue con
+ * el vigente; cuando el broker lo rechaza por credenciales (CONNACK 4 o 5,
+ * MQTT 3.1.1) el nodo prueba el relevo y, si conecta, lo vuelve vigente.
+ */
+constexpr int CONNACK_CREDENCIALES_INVALIDAS = 4;  ///< bad user name or password
+constexpr int CONNACK_NO_AUTORIZADO = 5;           ///< not authorized
+
+/// ¿Probar el token de relevo tras este rechazo del broker?
+bool debeUsarRelevo(int codigoConnack, const std::string& tokenActual, const std::string& relevo);
+
 }  // namespace core
 
 #endif  // CORE_CREDENCIALES_H

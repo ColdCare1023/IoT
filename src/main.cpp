@@ -32,6 +32,7 @@
 #include "config.h"
 #include "core/Backoff.h"
 #include "core/Consola.h"
+#include "core/Credenciales.h"
 #include "core/Json.h"
 #include "core/Payload.h"
 #include "core/Pem.h"
@@ -84,6 +85,8 @@ static void publicarEventoDirecto(const char* tipo, const std::string& detalle);
 static bool g_imagenAPrueba = false;
 static volatile bool g_capturoLectura = false;
 static bool g_conectoBroker = false;
+// HU-44 (A-1): la conexión en curso usa el token de relevo (aún no vigente en NVS).
+static bool g_relevoEnPrueba = false;
 
 #if MODO_DEMO
 // Excursión SIMULADA para la demo/sustentación. Cada lectura afectada lleva
@@ -416,8 +419,8 @@ static void atenderConsola() {
                            " | demo excursion <temp_C> <n_lecturas>"
 #endif
             );
-            Serial.println("Claves NVS: wifi_ssid wifi_pass mqtt_host mqtt_token device_id intervalo_s "
-                           "clave_servicio");
+            Serial.println("Claves NVS: wifi_ssid wifi_pass mqtt_host mqtt_token mqtt_relevo device_id "
+                           "intervalo_s clave_servicio");
         } else if (verbo == "desbloquear") {
             if (!hayClave) {
                 Serial.println("Sin clave de servicio: la consola no esta bloqueada.");
@@ -618,6 +621,38 @@ static void revisarRotacionToken() {
     encolarEvento("credencial_rotada", "");
 }
 
+/// HU-44 (A-1): el broker rechazó la credencial vigente. Si hay un token de
+/// relevo cargado antes de rotar en la consola de EMQX, se prueba en el próximo
+/// intento sin reiniciar. Devuelve true si cambió el token.
+static bool aplicarTokenRelevo(int codigoConnack) {
+    if (g_config.identidadBloqueada) return false;  // IOT-005
+    const String relevo = leerTokenRelevo();
+    if (!core::debeUsarRelevo(codigoConnack, std::string(mqtt.token().c_str()), std::string(relevo.c_str()))) {
+        return false;
+    }
+    LOG_I("Red", "Broker rechazo el token vigente (CONNACK %d): se prueba el token de relevo (HU-44).",
+          codigoConnack);
+    mqtt.actualizarToken(relevo);
+    g_relevoEnPrueba = true;
+    return true;
+}
+
+/// Tras conectar: si conectó con el relevo, pasa a ser el token vigente en NVS.
+static void consolidarTokenRelevo() {
+    if (!g_relevoEnPrueba) return;
+    g_relevoEnPrueba = false;
+    // revisarRotacionToken() pudo volver al token de NVS entre tanto: solo se
+    // promueve si la sesión abierta es la del relevo.
+    if (mqtt.token() != leerTokenRelevo()) return;
+    if (!promoverTokenRelevo(mqtt.token())) {
+        LOG_E("Red", "No se pudo guardar el token de relevo como vigente en NVS.");
+        return;
+    }
+    core::ObjetoJSON d;
+    d.cadena("origen", "relevo");
+    encolarEvento("credencial_rotada", d.cerrar());
+}
+
 /// IOT-004: confirma la imagen en prueba cuando el nodo demostró que funciona;
 /// si no lo logra en el plazo, la invalida y el bootloader vuelve a la anterior.
 static void verificarArranqueOTA() {
@@ -741,9 +776,12 @@ static void taskRed(void*) {
             const bool ok = mqtt.conectar();
             alimentarWatchdog();  // handshake TLS + CONNACK: el tramo más largo
             if (!ok) {
-                delay(500);
+                // HU-44 (A-1): rechazo por credencial con relevo cargado → se
+                // reintenta enseguida con él; si no, la espera normal.
+                if (!aplicarTokenRelevo(mqtt.ultimoCodigoRetorno())) delay(500);
                 continue;
             }
+            consolidarTokenRelevo();
             g_conectoBroker = true;  // IOT-004: autodiagnóstico
         }
         if (!sesionAnunciada) {

@@ -9,7 +9,7 @@
 #include "../core/Payload.h"
 
 static const char* const CLAVES_TEXTO[] = {"wifi_ssid", "wifi_pass", "mqtt_host", "mqtt_token",
-                                           "device_id"};
+                                           "mqtt_relevo", "device_id"};
 
 bool ConfiguracionNodo::credencialesCompletas() const {
     return core::aprovisionamientoCompleto(std::string(wifiSsid.c_str()),
@@ -75,6 +75,30 @@ String releerTokenMqtt() {
     nvs.end();
     if (!core::credencialValida(std::string(token.c_str()))) token = MQTT_TOKEN;
     return token;
+}
+
+String leerTokenRelevo() {
+    Preferences nvs;
+    if (!nvs.begin(NVS_NAMESPACE, true)) return String();
+    const String relevo = nvs.getString("mqtt_relevo", "");
+    nvs.end();
+    return core::credencialValida(std::string(relevo.c_str())) ? relevo : String();
+}
+
+bool promoverTokenRelevo(const String& relevo) {
+    Preferences nvs;
+    if (!nvs.begin(NVS_NAMESPACE, false)) return false;
+    const bool ok = nvs.putString("mqtt_token", relevo) == relevo.length();
+    if (ok) nvs.remove("mqtt_relevo");
+    nvs.end();
+    return ok;
+}
+
+void descartarTokenRelevo() {
+    Preferences nvs;
+    if (!nvs.begin(NVS_NAMESPACE, false)) return;
+    nvs.remove("mqtt_relevo");
+    nvs.end();
 }
 
 uint32_t cargarEIncrementarBootId() {
