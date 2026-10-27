@@ -21,6 +21,7 @@ void run_tests_identidad(void);
 void run_tests_consola(void);
 void run_tests_ota(void);
 void run_tests_pem(void);
+void run_tests_posesion(void);
 
 int main(int, char**) {
     UNITY_BEGIN();
@@ -36,5 +37,6 @@ int main(int, char**) {
     run_tests_consola();
     run_tests_ota();
     run_tests_pem();
+    run_tests_posesion();
     return UNITY_END();
 }

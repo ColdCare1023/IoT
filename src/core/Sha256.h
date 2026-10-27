@@ -24,6 +24,8 @@ public:
     void actualizar(const uint8_t* datos, size_t largo);
     /// Cierra el cálculo y devuelve la huella; el objeto queda reiniciado.
     std::string finalizarHex();
+    /// Igual, en bytes (HMAC de la prueba de posesión, HU-44).
+    void finalizar(uint8_t salida[32]);
 
 private:
     void _reiniciar();

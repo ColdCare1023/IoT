@@ -78,6 +78,18 @@ void Sha256::actualizar(const uint8_t* datos, size_t largo) {
 }
 
 std::string Sha256::finalizarHex() {
+    uint8_t huella[32];
+    finalizar(huella);
+    static const char hex[] = "0123456789abcdef";
+    std::string salida(64, '0');
+    for (int i = 0; i < 32; ++i) {
+        salida[2 * i] = hex[huella[i] >> 4];
+        salida[2 * i + 1] = hex[huella[i] & 0x0f];
+    }
+    return salida;
+}
+
+void Sha256::finalizar(uint8_t salida[32]) {
     // Relleno: 0x80, ceros y la longitud en bits (big-endian, 64 bits).
     const uint64_t bits = _total * 8u;
     uint8_t cola[128] = {0};
@@ -88,17 +100,10 @@ std::string Sha256::finalizarHex() {
     procesarBloque(_h, cola);
     if (total == 128) procesarBloque(_h, cola + 64);
 
-    static const char hex[] = "0123456789abcdef";
-    std::string salida(64, '0');
     for (int j = 0; j < 8; ++j) {
-        for (int k = 0; k < 4; ++k) {
-            const uint8_t byte = (uint8_t)(_h[j] >> (24 - 8 * k));
-            salida[8 * j + 2 * k] = hex[byte >> 4];
-            salida[8 * j + 2 * k + 1] = hex[byte & 0x0f];
-        }
+        for (int k = 0; k < 4; ++k) salida[4 * j + k] = (uint8_t)(_h[j] >> (24 - 8 * k));
     }
     _reiniciar();
-    return salida;
 }
 
 std::string sha256Hex(const uint8_t* datos, size_t largo) {
