@@ -143,7 +143,7 @@ sigue reteniendo. El nonce caduca a los 10 min y sirve una vez; el backend lo re
 | `wifi_reconexion_prolongada` | `intentos_fallidos`, `duracion_s`, `umbral_intentos` | HU-08 esc. 3 |
 | `credencial_rotada` | — | HU-44 esc. 2 |
 | `prueba_posesion` | `nonce`, `hmac` (respuesta al desafío de 2.1) | HU-44 |
-| `lectura_vigente` | `boot_id`, `seq_no`, `temperatura_interna` (null con sensor en falla), `captured_at` (null sin SNTP), `time_quality`, `uptime_s`. Solo mientras el drenaje está detenido por falta de acuse, una vez por captura: el backend aplica la regla 2-8 °C durante la retención; no la persiste como lectura | HU-44 |
+| `lectura_vigente` | `boot_id`, `seq_no`, `temperatura_interna` (null con sensor en falla), `captured_at` (null sin SNTP), `time_quality`, `uptime_s`. Solo mientras el drenaje está detenido por falta de acuse, una vez por captura: el backend aplica la regla 2-8 °C durante la retención; no la persiste como lectura. El nodo no sabe por qué falta el acuse, así que también la publica con el backend o PostgreSQL caídos (HU-22); fuera de una retención el backend la descarta sin auditarla. No es un error | HU-44 |
 | `puerta` | `door_open` (true = abierta); `occurred_at` es la hora del cambio | HU-04 esc. 1 |
 | `conmutacion_respaldo` / `suministro_restablecido` | `desde`/`hacia` · `duracion_respaldo_s` | HU-52 esc. 1 (solo con sensado) |
 | `respaldo_autonomia_critica` | `transcurrido_s`, `autonomia_medida_min`, `base` | HU-52 esc. 3 (estimación) |
