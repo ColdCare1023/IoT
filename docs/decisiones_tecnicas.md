@@ -197,8 +197,8 @@ Cada decisión indica el requisito que la motiva y lo que se sacrifica.
   aceptada por OpenSSL, firma con `infra-local/scripts/firmar_csr_nodo.sh` (CA EC y RSA) y validación de
   certificado válido, sin usos extendidos, de servidor, de otro CN, de otra clave y con dos CN. Pruebas
   nativas del paso base64 → PEM; `esp32dev` y `demo` compilan.
-- **Límites.** EMQX Serverless no admite certificados de cliente X.509: en producción sobre Serverless los
-  nodos se autentican solo con usuario y token. La aplicación ocupa ya ~93 % (demo ~95 %) de su partición: la
+- **Límites.** La documentación de EMQX Cloud lista la autenticación X.509 también para Serverless, pero no se
+  ha probado en la instancia real: hasta verificarlo, en producción los nodos se autentican con usuario y token. La aplicación ocupa ya ~93 % (demo ~95 %) de su partición: la
   próxima funcionalidad grande obliga a revisar el reparto de la flash o recortar dependencias.
 - **Pendiente en hardware.** Generación de la clave y handshake mutuo contra el EMQX local.
 
@@ -220,3 +220,31 @@ Cada decisión indica el requisito que la motiva y lo que se sacrifica.
   `arranque` (`flash_cifrada`, `arranque_seguro`) y en `estado`, y avisa en el log si no lo está.
 - **Salida futura.** Si el modelo de amenazas lo exige, firmar cada registro al capturarlo con la clave
   del nodo de ADR-15 (ECDSA P-256) y verificar en el backend con su certificado.
+
+## ADR-17 · Token de relevo para rotar sin cortar al nodo legítimo (HU-44, A-1)
+
+- **Contexto.** EMQX guarda una sola contraseña por usuario. En Serverless el administrador la cambia a
+  mano en la consola. Con un único token, cualquier orden deja al nodo legítimo sin conexión un rato: si se
+  cambia primero el broker, el nodo no entra hasta que alguien le escriba el token nuevo por la consola
+  serie; si se cambia primero el nodo, no entra hasta que se actualice el broker. Las lecturas no se
+  pierden (quedan en LittleFS), pero el tablero pasa a SIN_DATOS.
+- **Decisión.** El nodo admite un segundo token en NVS, `mqtt_relevo`, que se carga **antes** de cambiar el
+  broker. El nodo sigue conectado con el vigente. Cuando el broker lo rechaza por credencial (CONNACK 4
+  «bad user name or password» o 5 «not authorized», MQTT 3.1.1), prueba el relevo en el siguiente intento
+  sin reiniciar (`core::debeUsarRelevo`); si conecta, lo promueve a `mqtt_token`, borra el relevo y publica
+  `credencial_rotada` con `origen: relevo`. Si el relevo tampoco sirve, la revisión periódica del token
+  (cada 5 min) vuelve al de NVS: el nodo nunca se queda atado a un relevo erróneo.
+- **Canal.** Consola serie protegida con la clave de servicio (IOT-002), no un mensaje MQTT: el token nunca
+  viaja por la red ni queda en el broker, y una ACL mal puesta no permitiría entregar tokens a otro nodo.
+- **Procedimiento de rotación (orden).**
+  1. Backend: `POST /api/dispositivos/{id}/credenciales/rotar` → token nuevo (se muestra una vez; queda
+     `broker_pendiente = aprovisionar`).
+  2. Nodo: `desbloquear <clave_servicio>` y `nvs set mqtt_relevo <token nuevo>`.
+  3. Consola de EMQX: cambiar la contraseña del usuario `<device_id>` por el token nuevo.
+  4. El backend ya expulsó la sesión en el paso 1; el nodo reintenta, el broker rechaza el token viejo y el
+     nodo entra con el relevo (evento `credencial_rotada`, `origen: relevo`).
+  5. Backend: `POST /api/dispositivos/{id}/broker/confirmar`.
+- **Revocación.** No usa relevo: se retira el usuario en la consola y el backend rechaza la telemetría del
+  nodo mientras tanto (revocación a nivel de aplicación).
+- **Verificado.** Pruebas nativas de la decisión (`test_credenciales.cpp`); `esp32dev` compila.
+  **Pendiente en hardware** contra EMQX: el ciclo completo con captura del log del nodo.
