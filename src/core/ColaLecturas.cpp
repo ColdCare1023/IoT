@@ -286,6 +286,13 @@ uint32_t ColaLecturas::pendientes() const {
     return total >= _cursorIndice ? total - _cursorIndice : 0;
 }
 
+size_t bytesMinimosParticion(const ConfigCola& config, size_t tamBloque) {
+    const size_t bytesSegmento = (size_t)config.registrosPorSegmento * TAM_REGISTRO;
+    const size_t bloquesPorSegmento = (bytesSegmento + tamBloque - 1) / tamBloque;
+    return ((size_t)config.maxSegmentos * bloquesPorSegmento + BLOQUES_METADATOS_LITTLEFS) * tamBloque +
+           config.reservaBytesLibres;
+}
+
 uint32_t ColaLecturas::capacidadRegistros() const {
     return _config.maxSegmentos * _config.registrosPorSegmento;
 }

@@ -222,6 +222,13 @@ bool BufferLittleFS::begin(bool& formateado, core::InformeMontaje& informe) {
     if (informe.cursorReconstruido) {
         LOG_E("Buffer", "Cursor ilegible: se reenviara desde el inicio (el backend deduplica).");
     }
+    // Una tabla de particiones con LittleFS menor que la necesaria satura la
+    // cola antes de su capacidad nominal: se avisa en vez de descubrirlo en campo.
+    const size_t minimo = core::bytesMinimosParticion(configCola());
+    if (bytesTotales() < minimo) {
+        LOG_E("Buffer", "LittleFS de %u KB < %u KB necesarios para %lu lecturas: la cola se saturara antes.",
+              (unsigned)(bytesTotales() / 1024), (unsigned)(minimo / 1024), (unsigned long)capacidad());
+    }
     return true;
 }
 
@@ -250,6 +257,7 @@ uint32_t BufferLittleFS::cuarentenaDesbordada() { CON_MUTEX(_cola.cuarentenaDesb
 uint32_t BufferLittleFS::erroresEscritura() { CON_MUTEX(_cola.erroresEscritura()); }
 core::EstadoPerdidas BufferLittleFS::perdidas() { CON_MUTEX(_cola.perdidas()); }
 size_t BufferLittleFS::bytesLibres() { CON_MUTEX(_almacen.bytesLibres()); }
+size_t BufferLittleFS::bytesTotales() { CON_MUTEX(LittleFS.totalBytes()); }
 
 bool BufferLittleFS::consumirAvisoOcupacion(uint8_t& pct) {
     CON_MUTEX(_cola.consumirAvisoOcupacion(pct));

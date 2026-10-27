@@ -41,6 +41,7 @@ public:
     uint32_t erroresEscritura();
     core::EstadoPerdidas perdidas();
     size_t bytesLibres();
+    size_t bytesTotales();  ///< tamaño útil de LittleFS (B medido en el nodo)
 
     bool consumirAvisoOcupacion(uint8_t& pct);
     bool consumirAvisoPerdidas(core::EstadoPerdidas& estado);

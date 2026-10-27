@@ -95,6 +95,17 @@ struct ConfigCola {
     size_t reservaBytesLibres = 16 * 1024;  ///< margen para cursor, CA y COW de LittleFS
 };
 
+/// Bloques que se dejan para metadatos de directorio y copia en escritura de
+/// LittleFS al dimensionar la partición (300 entradas de directorio ocupan
+/// varios pares de metadatos).
+constexpr size_t BLOQUES_METADATOS_LITTLEFS = 16;
+
+/// Bytes mínimos de la partición LittleFS para la capacidad nominal de la
+/// cola: un bloque por segmento (4000 B caben en uno de 4096), la reserva
+/// libre que exige `guardar` y los metadatos. Con menos, la cola se satura
+/// antes de llegar a `capacidadRegistros()`.
+size_t bytesMinimosParticion(const ConfigCola& config, size_t tamBloque = 4096);
+
 enum class ResultadoGuardado { Guardado, SaturadoNoAlmacenado, ErrorEscritura };
 enum class EstadoCabeza { Vacia, Ok, Corrupta };
 

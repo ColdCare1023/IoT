@@ -456,7 +456,16 @@ void test_el_cerrojo_no_se_sostiene_durante_el_envio(void) {
     TEST_ASSERT_TRUE(cerrojo.tomas >= 10);
 }
 
+/// Tablas de particiones: LittleFS debe alojar las 30 000 lecturas nominales.
+void test_particiones_alojan_la_capacidad_nominal(void) {
+    const core::ConfigCola config;  // 300 segmentos × 100 registros, reserva 16 KB
+    TEST_ASSERT_EQUAL_UINT32(1310720u, (uint32_t)core::bytesMinimosParticion(config));  // 1280 KB
+    TEST_ASSERT_TRUE(0x170000u >= core::bytesMinimosParticion(config));  // partitions.csv
+    TEST_ASSERT_TRUE(0x160000u >= core::bytesMinimosParticion(config));  // partitions_produccion.csv
+}
+
 void run_tests_cola(void) {
+    RUN_TEST(test_particiones_alojan_la_capacidad_nominal);
     RUN_TEST(test_el_cerrojo_no_se_sostiene_durante_el_envio);
     RUN_TEST(test_fifo_estricto_entre_segmentos);
     RUN_TEST(test_sin_acuse_logico_no_se_borra_nada);

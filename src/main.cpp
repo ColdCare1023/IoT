@@ -580,6 +580,9 @@ static void publicarEstadoNodo(uint32_t pubacksSinAck, uint32_t acksHuellaAjena)
     d.sinSigno("pendientes", buffer.pendientes());
     d.sinSigno("ocupacion_pct", buffer.ocupacionPct());
     d.sinSigno("capacidad", buffer.capacidad());
+    // B medido en el nodo: tamaño útil de LittleFS y lo que queda libre.
+    d.sinSigno("fs_total_bytes", (uint32_t)buffer.bytesTotales());
+    d.sinSigno("fs_libres_bytes", (uint32_t)buffer.bytesLibres());
     d.sinSigno("perdidas_total", p.total);
     d.sinSigno("cuarentena", buffer.cuarentenados());
     d.sinSigno("ultimo_seq_no", g_seqNo);
