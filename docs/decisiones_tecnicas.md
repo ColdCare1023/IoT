@@ -229,11 +229,14 @@ Cada decisión indica el requisito que la motiva y lo que se sacrifica.
   serie; si se cambia primero el nodo, no entra hasta que se actualice el broker. Las lecturas no se
   pierden (quedan en LittleFS), pero el tablero pasa a SIN_DATOS.
 - **Decisión.** El nodo admite un segundo token en NVS, `mqtt_relevo`, que se carga **antes** de cambiar el
-  broker. El nodo sigue conectado con el vigente. Cuando el broker lo rechaza por credencial (CONNACK 4
-  «bad user name or password» o 5 «not authorized», MQTT 3.1.1), prueba el relevo en el siguiente intento
-  sin reiniciar (`core::debeUsarRelevo`); si conecta, lo promueve a `mqtt_token`, borra el relevo y publica
-  `credencial_rotada` con `origen: relevo`. Si el relevo tampoco sirve, la revisión periódica del token
-  (cada 5 min) vuelve al de NVS: el nodo nunca se queda atado a un relevo erróneo.
+  broker. Con un relevo cargado, el nodo lo prueba **primero** en cada conexión (`core::elegirTokenConexion`).
+  Si el broker lo acepta, lo promueve a `mqtt_token`, **borra el token anterior en ese momento** y publica
+  `credencial_rotada` con `origen: relevo`: el anterior nunca queda como respaldo. Si el broker rechaza el
+  relevo por credencial (CONNACK 4 «bad user name or password» o 5 «not authorized», MQTT 3.1.1), la consola
+  aún no cambió: el nodo entra con el vigente sin reiniciar y vuelve a probar el relevo en la siguiente
+  reconexión. Mientras siga conectado con el vigente y haya un relevo, cada 5 min cierra la sesión con un
+  DISCONNECT ordenado para probarlo (`sondearRelevo`), por si el backend no pudo expulsar la sesión al
+  confirmar la consola: cambiar la contraseña en EMQX no cierra las sesiones abiertas.
 - **Canal.** Consola serie protegida con la clave de servicio (IOT-002), no un mensaje MQTT: el token nunca
   viaja por la red ni queda en el broker, y una ACL mal puesta no permitiría entregar tokens a otro nodo.
 - **Procedimiento de rotación (orden).**
@@ -241,9 +244,12 @@ Cada decisión indica el requisito que la motiva y lo que se sacrifica.
      `broker_pendiente = aprovisionar`).
   2. Nodo: `desbloquear <clave_servicio>` y `nvs set mqtt_relevo <token nuevo>`.
   3. Consola de EMQX: cambiar la contraseña del usuario `<device_id>` por el token nuevo.
-  4. El backend ya expulsó la sesión en el paso 1; el nodo reintenta, el broker rechaza el token viejo y el
-     nodo entra con el relevo (evento `credencial_rotada`, `origen: relevo`).
-  5. Backend: `POST /api/dispositivos/{id}/broker/confirmar`.
+  4. Backend: `POST /api/dispositivos/{id}/broker/confirmar`. El backend expulsa la sesión; el nodo
+     reconecta, prueba el relevo, el broker lo acepta y el nodo borra el token viejo (evento
+     `credencial_rotada`, `origen: relevo`).
+  Si la rotación fue por **compromiso** (`causa: compromiso`), entre los pasos 1 y 4 el backend retiene la
+  telemetría sin acuse: el nodo la conserva en LittleFS y la entrega tras el paso 4 (Backend
+  `docs/operacion/HU-44_rotacion_y_revocacion.md`).
 - **Revocación.** No usa relevo: se retira el usuario en la consola y el backend rechaza la telemetría del
   nodo mientras tanto (revocación a nivel de aplicación).
 - **Verificado.** Pruebas nativas de la decisión (`test_credenciales.cpp`); `esp32dev` compila.
