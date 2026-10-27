@@ -74,7 +74,37 @@ void test_relevo_vacio_o_igual_no_se_usa(void) {
     TEST_ASSERT_FALSE(core::debeUsarRelevo(core::CONNACK_NO_AUTORIZADO, "token_viejo_123", "token_generado_en_emqx"));
 }
 
+/// HU-44: con relevo cargado se prueba primero; rechazado en este ciclo, el vigente.
+void test_con_relevo_cargado_se_prueba_primero(void) {
+    TEST_ASSERT_TRUE(core::elegirTokenConexion("token_viejo_123", "token_nuevo_456", false) ==
+                     core::TokenConexion::Relevo);
+}
+
+void test_relevo_rechazado_vuelve_al_vigente_hasta_la_proxima_reconexion(void) {
+    TEST_ASSERT_TRUE(core::elegirTokenConexion("token_viejo_123", "token_nuevo_456", true) ==
+                     core::TokenConexion::Vigente);
+}
+
+void test_sin_relevo_valido_se_usa_el_vigente(void) {
+    TEST_ASSERT_TRUE(core::elegirTokenConexion("token_viejo_123", "", false) == core::TokenConexion::Vigente);
+    TEST_ASSERT_TRUE(core::elegirTokenConexion("token_viejo_123", "token_viejo_123", false) ==
+                     core::TokenConexion::Vigente);
+    TEST_ASSERT_TRUE(core::elegirTokenConexion("token_viejo_123", "token_generado_en_emqx", false) ==
+                     core::TokenConexion::Vigente);
+}
+
+void test_rechazo_por_credencial_solo_connack_4_y_5(void) {
+    TEST_ASSERT_TRUE(core::rechazoPorCredencial(core::CONNACK_CREDENCIALES_INVALIDAS));
+    TEST_ASSERT_TRUE(core::rechazoPorCredencial(core::CONNACK_NO_AUTORIZADO));
+    TEST_ASSERT_FALSE(core::rechazoPorCredencial(3));
+    TEST_ASSERT_FALSE(core::rechazoPorCredencial(-2));
+}
+
 void run_tests_credenciales(void) {
+    RUN_TEST(test_con_relevo_cargado_se_prueba_primero);
+    RUN_TEST(test_relevo_rechazado_vuelve_al_vigente_hasta_la_proxima_reconexion);
+    RUN_TEST(test_sin_relevo_valido_se_usa_el_vigente);
+    RUN_TEST(test_rechazo_por_credencial_solo_connack_4_y_5);
     RUN_TEST(test_relevo_tras_rechazo_por_credencial);
     RUN_TEST(test_sin_rechazo_por_credencial_no_hay_relevo);
     RUN_TEST(test_relevo_vacio_o_igual_no_se_usa);

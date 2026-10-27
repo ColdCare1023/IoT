@@ -87,6 +87,8 @@ static volatile bool g_capturoLectura = false;
 static bool g_conectoBroker = false;
 // HU-44 (A-1): la conexión en curso usa el token de relevo (aún no vigente en NVS).
 static bool g_relevoEnPrueba = false;
+// HU-44: el broker rechazó el relevo en este ciclo (la consola aún no cambió).
+static bool g_relevoRechazado = false;
 
 #if MODO_DEMO
 // Excursión SIMULADA para la demo/sustentación. Cada lectura afectada lleva
@@ -471,8 +473,9 @@ static void atenderConsola() {
                 // Nunca se hace eco del valor: el monitor serie acaba en anexos.
                 Serial.printf("nvs set %s -> %s (valor no mostrado). Reiniciar para aplicar", clave.c_str(),
                               ok ? "OK" : "RECHAZADO");
-                Serial.println(clave == "mqtt_token" ? "; el token se aplica sin reiniciar." : ".");
-                if (ok && clave == "mqtt_token") g_revisarTokenYa = true;
+                const bool esToken = clave == "mqtt_token" || clave == "mqtt_relevo";
+                Serial.println(esToken ? "; el token se aplica sin reiniciar." : ".");
+                if (ok && esToken) g_revisarTokenYa = true;
                 if (ok) {
                     if (clave == "clave_servicio") g_huellaServicio = huellaClaveServicio();
                     // IOT-002: el cambio se informa (qué clave, nunca el valor).
@@ -613,6 +616,7 @@ static void publicarEventosPendientes() {
 /// con la credencial nueva SIN reiniciar: boot_id, seq_no y buffer siguen.
 static void revisarRotacionToken() {
     if (g_config.identidadBloqueada) return;  // IOT-005: nunca se entrega un token
+    if (g_relevoEnPrueba) return;  // prepararTokenConexion ya relee NVS en cada intento
     const String nuevo = releerTokenMqtt();
     if (nuevo == mqtt.token() || nuevo.isEmpty()) return;
     LOG_I("Red", "Token MQTT rotado en NVS: reconexion ordenada sin reiniciar (HU-44).");
@@ -621,25 +625,59 @@ static void revisarRotacionToken() {
     encolarEvento("credencial_rotada", "");
 }
 
-/// HU-44 (A-1): el broker rechazó la credencial vigente. Si hay un token de
-/// relevo cargado antes de rotar en la consola de EMQX, se prueba en el próximo
-/// intento sin reiniciar. Devuelve true si cambió el token.
-static bool aplicarTokenRelevo(int codigoConnack) {
-    if (g_config.identidadBloqueada) return false;  // IOT-005
+/// HU-44: antes de cada conexión elige el token. Con relevo cargado se prueba
+/// PRIMERO: si el broker ya lo acepta, el token anterior se borra al conectar
+/// (consolidarTokenRelevo) y no queda como respaldo.
+static void prepararTokenConexion() {
+    if (g_config.identidadBloqueada) return;  // IOT-005
+    const String vigente = releerTokenMqtt();
     const String relevo = leerTokenRelevo();
-    if (!core::debeUsarRelevo(codigoConnack, std::string(mqtt.token().c_str()), std::string(relevo.c_str()))) {
-        return false;
+    const bool usarRelevo = core::elegirTokenConexion(std::string(vigente.c_str()), std::string(relevo.c_str()),
+                                                      g_relevoRechazado) == core::TokenConexion::Relevo;
+    const String& token = usarRelevo ? relevo : vigente;
+    if (token != mqtt.token()) mqtt.actualizarToken(token);
+    g_relevoEnPrueba = usarRelevo;
+}
+
+/// HU-44: la conexión falló. Devuelve true si conviene reintentar enseguida
+/// con el otro token (rechazo por credencial con relevo cargado).
+static bool tratarRechazoConexion(int codigoConnack) {
+    if (g_config.identidadBloqueada || !core::rechazoPorCredencial(codigoConnack)) return false;
+    if (g_relevoEnPrueba) {
+        // La consola de EMQX aún tiene el token anterior: se sigue con él.
+        LOG_I("Red", "Broker rechazo el token de relevo (CONNACK %d): se sigue con el vigente (HU-44).",
+              codigoConnack);
+        g_relevoRechazado = true;
+        return true;
     }
-    LOG_I("Red", "Broker rechazo el token vigente (CONNACK %d): se prueba el token de relevo (HU-44).",
-          codigoConnack);
-    mqtt.actualizarToken(relevo);
-    g_relevoEnPrueba = true;
-    return true;
+    if (core::debeUsarRelevo(codigoConnack, std::string(mqtt.token().c_str()),
+                             std::string(leerTokenRelevo().c_str()))) {
+        // El vigente ya no vale (la consola cambió): se vuelve a probar el relevo.
+        LOG_I("Red", "Broker rechazo el token vigente (CONNACK %d): se prueba el relevo (HU-44).", codigoConnack);
+        g_relevoRechazado = false;
+        return true;
+    }
+    return false;
+}
+
+/// HU-44: conectado con el vigente y con un relevo cargado: se cierra la sesión
+/// para probarlo. Cubre el caso en que el backend no pudo expulsar la sesión al
+/// confirmar la consola (cambiar la contraseña no cierra sesiones abiertas).
+static void sondearRelevo() {
+    if (g_config.identidadBloqueada || !mqtt.conectado() || g_relevoEnPrueba) return;
+    const String relevo = leerTokenRelevo();
+    if (relevo.isEmpty() || relevo == mqtt.token()) return;
+    LOG_I("Red", "Token de relevo pendiente: reconexion ordenada para probarlo (HU-44).");
+    g_relevoRechazado = false;
+    mqtt.desconectarOrdenadamente();  // DISCONNECT limpio: no dispara el LWT
 }
 
 /// Tras conectar: si conectó con el relevo, pasa a ser el token vigente en NVS.
 static void consolidarTokenRelevo() {
-    if (!g_relevoEnPrueba) return;
+    if (!g_relevoEnPrueba) {
+        g_relevoRechazado = false;  // la próxima reconexión vuelve a probar el relevo
+        return;
+    }
     g_relevoEnPrueba = false;
     // revisarRotacionToken() pudo volver al token de NVS entre tanto: solo se
     // promueve si la sesión abierta es la del relevo.
@@ -767,18 +805,20 @@ static void taskRed(void*) {
             g_revisarTokenYa = false;
             ultimaRevisionTokenMs = millis();
             revisarRotacionToken();
+            sondearRelevo();
         }
 
         // HU-09: canal MQTT sobre TLS con la CA validada. Sin CA o sin
         // credenciales, fallo cerrado: no hay alternativa en texto plano.
         if (!mqtt.conectado()) {
             sesionAnunciada = false;
+            prepararTokenConexion();
             const bool ok = mqtt.conectar();
             alimentarWatchdog();  // handshake TLS + CONNACK: el tramo más largo
             if (!ok) {
-                // HU-44 (A-1): rechazo por credencial con relevo cargado → se
-                // reintenta enseguida con él; si no, la espera normal.
-                if (!aplicarTokenRelevo(mqtt.ultimoCodigoRetorno())) delay(500);
+                // HU-44: rechazo por credencial con relevo cargado → se
+                // reintenta enseguida con el otro token; si no, la espera normal.
+                if (!tratarRechazoConexion(mqtt.ultimoCodigoRetorno())) delay(500);
                 continue;
             }
             consolidarTokenRelevo();

@@ -40,15 +40,29 @@ bool aprovisionamientoCompleto(const std::string& ssid,
  * en la consola del broker, el nodo legítimo queda fuera hasta que alguien le
  * escriba el token por la consola serie; si se carga primero en el nodo, queda
  * fuera hasta que se actualice el broker. El relevo resuelve el orden: el token
- * nuevo se deja ANTES en el nodo como `mqtt_relevo` (NVS: máx. 15 caracteres por clave) y el nodo sigue con
- * el vigente; cuando el broker lo rechaza por credenciales (CONNACK 4 o 5,
- * MQTT 3.1.1) el nodo prueba el relevo y, si conecta, lo vuelve vigente.
+ * nuevo se deja ANTES en el nodo como `mqtt_relevo` (NVS: máx. 15 caracteres por clave). El nodo lo
+ * prueba primero en cada conexión y, mientras el broker lo rechace por
+ * credenciales (CONNACK 4 o 5, MQTT 3.1.1), sigue con el vigente; cuando lo
+ * acepta, lo vuelve vigente y borra el anterior.
  */
 constexpr int CONNACK_CREDENCIALES_INVALIDAS = 4;  ///< bad user name or password
 constexpr int CONNACK_NO_AUTORIZADO = 5;           ///< not authorized
 
 /// ¿Probar el token de relevo tras este rechazo del broker?
 bool debeUsarRelevo(int codigoConnack, const std::string& tokenActual, const std::string& relevo);
+
+/// ¿El broker rechazó la conexión por la credencial (y no por red o servidor)?
+bool rechazoPorCredencial(int codigoConnack);
+
+/**
+ * HU-44: con un relevo cargado, el nodo lo prueba PRIMERO en cada conexión.
+ * Si el broker ya lo acepta, se promueve y el token anterior se borra en ese
+ * mismo momento (no queda como respaldo). Si el broker lo rechazó en este
+ * ciclo (la consola aún no cambió), se entra con el vigente hasta la siguiente
+ * reconexión.
+ */
+enum class TokenConexion { Vigente, Relevo };
+TokenConexion elegirTokenConexion(const std::string& vigente, const std::string& relevo, bool relevoRechazado);
 
 }  // namespace core
 
