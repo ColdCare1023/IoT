@@ -295,6 +295,20 @@ static void llenarBufferBanco() {
         g_bancoPorLlenar = 0;
     }
 }
+
+// ADR-18: progreso del vaciado, para medir cuánto tarda sin consultar la base.
+// Solo lo usa la tarea de red; cuenta desde el arranque.
+static uint32_t g_bancoDrenados = 0;
+
+static void reportarDrenajeBanco(int confirmados) {
+    if (confirmados <= 0) return;
+    const uint32_t antes = g_bancoDrenados;
+    g_bancoDrenados += (uint32_t)confirmados;
+    if (g_bancoDrenados / 1000 != antes / 1000) {
+        Serial.printf("[BANCO] drenados=%lu pendientes=%lu/%lu\n", (unsigned long)g_bancoDrenados,
+                      (unsigned long)buffer.pendientes(), (unsigned long)buffer.capacidad());
+    }
+}
 #endif
 
 static void taskCaptura(void*) {
@@ -1034,6 +1048,9 @@ static void taskRed(void*) {
         if (!drenajeEnEspera || backoffDrenaje.debeIntentar(millis(), ultimoDrenajeMs)) {
             ultimoDrenajeMs = millis();
             const core::ResumenDrenaje r = buffer.drenar(transmisor, DRENAJE_MAX_POR_CICLO);
+#if COMANDOS_BANCO
+            reportarDrenajeBanco(r.confirmados);
+#endif
             if (r.detenido) {
                 if (drenajeEnEspera) backoffDrenaje.registrarFallo();
                 drenajeEnEspera = true;
