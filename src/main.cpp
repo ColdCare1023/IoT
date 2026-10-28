@@ -539,7 +539,31 @@ static void atenderConsola() {
             if (accion == "set") {
                 const int e3 = args.indexOf(' ');
                 const String clave = e3 < 0 ? args : args.substring(0, e3);
-                const String valor = e3 < 0 ? String() : args.substring(e3 + 1);
+                String valor = e3 < 0 ? String() : args.substring(e3 + 1);
+                // Los registros pendientes no llevan device_id: se pone al
+                // enviarlos. Cambiar la identidad con la cola sin vaciar mandaría
+                // lecturas reales como de otro equipo o, al volver del banco,
+                // miles de sintéticos a cuarentena (BE-015).
+                uint32_t pendientesForzados = 0;
+                if (clave == "device_id") {
+                    const bool forzar = valor.endsWith(" forzar");
+                    if (forzar) {
+                        valor.remove(valor.length() - 7);
+                        valor.trim();
+                    }
+                    const uint32_t pendientes = buffer.pendientes();
+                    if (pendientes > 0 && !forzar) {
+                        Serial.printf("nvs set device_id RECHAZADO: hay %lu lecturas pendientes. Espere a que "
+                                      "se entreguen"
+#if COMANDOS_BANCO
+                                      ", use 'buffer descartar'"
+#endif
+                                      " o fuerce con 'nvs set device_id <id> forzar'.\n",
+                                      (unsigned long)pendientes);
+                        continue;
+                    }
+                    pendientesForzados = pendientes;
+                }
                 const bool ok = guardarClaveNvs(clave, valor);
                 // Nunca se hace eco del valor: el monitor serie acaba en anexos.
                 Serial.printf("nvs set %s -> %s (valor no mostrado). Reiniciar para aplicar", clave.c_str(),
@@ -553,6 +577,8 @@ static void atenderConsola() {
                     core::ObjetoJSON d;
                     d.cadena("clave", std::string(clave.c_str()));
                     d.cadena("accion", "set");
+                    // device_id cambiado con lecturas en cola: se enviarán con el nuevo.
+                    if (pendientesForzados > 0) d.sinSigno("pendientes_forzados", pendientesForzados);
                     encolarEvento("config_modificada", d.cerrar());
                 }
             } else if (accion == "borrar") {
