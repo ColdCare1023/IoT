@@ -309,4 +309,24 @@ Cada decisión indica el requisito que la motiva y lo que se sacrifica.
     En un equipo normal se rechazan y el nodo los pasa a cuarentena.
   - Cada uso se informa como `config_modificada` (`clave` = `buffer_sintetico`), y la consola lo marca como
     comando que modifica (exige `desbloquear` si hay clave de servicio).
+  - `buffer cancelar` deja la orden en un buzón atómico (`core::BuzonLlenadoBanco`). Solo la tarea de
+    captura escribe el contador, así que la cancelación no se pierde aunque llegue a mitad de una tanda;
+    la confirma esa tarea con `[BANCO] llenado cancelado`.
+- **Cambio de identidad para el ensayo.** Los registros en cola no llevan `device_id`: el nodo lo agrega al
+  enviarlos. Con lecturas reales en cola, cambiar a la identidad de banco las enviaría como del equipo de
+  banco; al volver, los sintéticos pendientes irían a cuarentena (BE-015). El orden es obligatorio:
+  1. vaciar la cola con la identidad real (`pendientes=0` en `estado`);
+  2. `nvs set device_id ESP32_BANCO_01` y reiniciar;
+  3. `buffer llenar 30000` con el broker caído y medir la saturación;
+  4. reconectar y vaciar: la consola imprime `[BANCO] drenados=N pendientes=P/C` cada 1000 entregas, y el
+     log serie con hora da la duración;
+  5. con la cola vacía, `nvs set device_id ESP32_FARMACIA_01` y reiniciar.
+  - `nvs set device_id` se rechaza mientras haya lecturas pendientes. `nvs set device_id <id> forzar` lo
+    permite, y `config_modificada` lleva entonces `pendientes_forzados`.
+  - Si el ensayo se corta a medias, `buffer descartar` detiene el llenado, espera a que la tarea de captura
+    lo confirme y borra la cola por tandas de 10 segmentos, para no pasar el watchdog de 5 s. Lo que se
+    capture después del comando no se borra. Se informa como `config_modificada` (`accion` = `descartar`,
+    `registros`).
+  - Mientras dura el ensayo, `ESP32_FARMACIA_01` no publica y el backend abre «Sin datos». Es esperado: se
+    anota en la evidencia con la hora de inicio y de fin.
 

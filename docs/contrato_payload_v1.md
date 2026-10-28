@@ -147,7 +147,7 @@ sigue reteniendo. El nonce caduca a los 10 min y sirve una vez; el backend lo re
 | `puerta` | `door_open` (true = abierta); `occurred_at` es la hora del cambio | HU-04 esc. 1 |
 | `conmutacion_respaldo` / `suministro_restablecido` | `desde`/`hacia` · `duracion_respaldo_s` | HU-52 esc. 1 (solo con sensado) |
 | `respaldo_autonomia_critica` | `transcurrido_s`, `autonomia_medida_min`, `base` | HU-52 esc. 3 (estimación) |
-| `config_modificada` | `clave` (nombre de la clave NVS, nunca el valor), `accion` (`set`/`borrar`; `generar` para `mqtt_key`) | IOT-002, IOT-006 |
+| `config_modificada` | `clave` (nombre de la clave NVS, nunca el valor), `accion` (`set`/`borrar`; `generar` para `mqtt_key`). `pendientes_forzados` si `device_id` se cambió con `forzar` y lecturas en cola. Con `clave` = `buffer_sintetico` (solo banco): `accion` `llenar`/`descartar` y `registros` | IOT-002, IOT-006, ADR-18 |
 | `reinicio_manual` | — (se publica antes del DISCONNECT ordenado, que no dispara el LWT) | IOT-002 |
 | `consola_desbloqueada` | — (desbloqueo con la clave de servicio, 10 min) | IOT-002 |
 | `consola_desbloqueo_fallido` | `intentos` (fallos seguidos al activarse el freno) | IOT-002 |

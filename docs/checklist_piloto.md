@@ -49,5 +49,6 @@ lecturas necesita 1280 KB de LittleFS (`core::bytesMinimosParticion`).
 - [ ] Confirmar que el log de arranque no muestra «LittleFS de … KB < 1280 KB necesarios».
 - [ ] Ensayo de saturación: con el broker caído, llenar el buffer (en banco, con `intervalo_s` corto) y
       comprobar que `capacidad` = 30 000 y que la primera pérdida aparece en la lectura 30 001.
-      Con `buffer llenar 30000` (solo `esp32dev`, ADR-18) y un `device_id` de banco dado de alta como demo.
+      Con `buffer llenar 30000` (solo `esp32dev`, ADR-18) y un `device_id` de banco dado de alta como demo,
+      siguiendo el orden de ADR-18: vaciar, cambiar identidad, llenar, vaciar y restaurar la identidad.
 - [ ] El firmware del piloto es `produccion`: la consola no debe aceptar `buffer` («Comando desconocido»).
