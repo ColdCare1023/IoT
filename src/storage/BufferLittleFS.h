@@ -33,6 +33,13 @@ public:
     /// Drena con el mutex tomado SOLO alrededor de cada operación de cola.
     core::ResumenDrenaje drenar(core::Transmisor& transmisor, int maxPorCiclo);
 
+    /// ADR-18 (`buffer descartar`): descarta los pendientes que había al
+    /// llamarla, por tandas de segmentos con el mutex tomado solo en cada una
+    /// (borrar 300 archivos de una vez pasaría el watchdog de 5 s y frenaría la
+    /// captura). `entreTandas` se llama entre tandas (watchdog). Llamar desde
+    /// la tarea de red, nunca durante `drenar()`.
+    uint32_t descartarPendientes(void (*entreTandas)());
+
     uint32_t pendientes();
     uint8_t ocupacionPct();
     uint32_t capacidad();

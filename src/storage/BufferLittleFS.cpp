@@ -243,6 +243,23 @@ core::ResumenDrenaje BufferLittleFS::drenar(core::Transmisor& transmisor, int ma
     return core::drenar(_cola, transmisor, maxPorCiclo, &_cerrojo);
 }
 
+uint32_t BufferLittleFS::descartarPendientes(void (*entreTandas)()) {
+    static constexpr uint32_t SEGMENTOS_POR_TANDA = 10;
+    xSemaphoreTakeRecursive(_mutex, portMAX_DELAY);
+    const uint32_t ultimo = _cola.prepararDescarte();
+    xSemaphoreGiveRecursive(_mutex);
+
+    uint32_t total = 0;
+    bool quedan = ultimo != 0;
+    while (quedan) {
+        xSemaphoreTakeRecursive(_mutex, portMAX_DELAY);
+        total += _cola.descartarTanda(ultimo, SEGMENTOS_POR_TANDA, quedan);
+        xSemaphoreGiveRecursive(_mutex);
+        if (entreTandas != nullptr) entreTandas();
+    }
+    return total;
+}
+
 #define CON_MUTEX(expr)                                   \
     xSemaphoreTakeRecursive(_mutex, portMAX_DELAY);       \
     auto _valor = (expr);                                 \

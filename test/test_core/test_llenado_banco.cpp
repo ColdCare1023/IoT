@@ -86,6 +86,25 @@ void test_sin_orden_el_contador_no_cambia(void) {
     TEST_ASSERT_EQUAL_UINT32(30, porLlenar);
 }
 
+/// `buffer descartar` espera a que la captura aplique la cancelación: hasta
+/// entonces podría seguir escribiendo sintéticos.
+void test_detenido_solo_tras_aplicar_la_cancelacion(void) {
+    core::BuzonLlenadoBanco buzon;
+    uint32_t porLlenar = 0;
+    TEST_ASSERT_TRUE(buzon.detenido());
+
+    buzon.pedirLlenado(500);
+    TEST_ASSERT_FALSE(buzon.detenido());  // orden sin aplicar
+    buzon.aplicar(porLlenar);
+    TEST_ASSERT_FALSE(buzon.detenido());  // llenando
+
+    buzon.pedirCancelacion();
+    TEST_ASSERT_FALSE(buzon.detenido());  // la captura aún no la vio
+    buzon.aplicar(porLlenar);
+    TEST_ASSERT_TRUE(buzon.detenido());
+    TEST_ASSERT_EQUAL_UINT32(0, porLlenar);
+}
+
 void run_tests_llenado_banco(void) {
     RUN_TEST(test_la_tanda_respeta_el_maximo_y_lo_pedido);
     RUN_TEST(test_la_tanda_no_pasa_de_la_capacidad);
@@ -94,4 +113,5 @@ void run_tests_llenado_banco(void) {
     RUN_TEST(test_cancelar_a_mitad_de_una_tanda_deja_el_contador_en_cero);
     RUN_TEST(test_si_llegan_dos_ordenes_vale_la_ultima);
     RUN_TEST(test_sin_orden_el_contador_no_cambia);
+    RUN_TEST(test_detenido_solo_tras_aplicar_la_cancelacion);
 }

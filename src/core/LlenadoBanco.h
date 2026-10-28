@@ -71,25 +71,32 @@ public:
     /// Consola.
     void pedirCancelacion() { _orden.store(CANCELAR); }
 
+    /// Consola: true cuando la tarea de captura ya aplicó la última orden y no
+    /// le quedan sintéticos por escribir. `buffer descartar` lo espera para
+    /// que ningún sintético llegue después del descarte.
+    bool detenido() const { return _orden.load() == SIN_ORDEN && !_llenando.load(); }
+
     /// Tarea de captura, al empezar cada paso: aplica la orden pendiente al
     /// contador, que solo ella escribe.
     OrdenBanco aplicar(uint32_t& porLlenar) {
         const uint32_t orden = _orden.exchange(SIN_ORDEN);
+        OrdenBanco aplicada = OrdenBanco::Ninguna;
         if (orden == CANCELAR) {
             porLlenar = 0;
-            return OrdenBanco::Cancelar;
-        }
-        if (orden != SIN_ORDEN) {
+            aplicada = OrdenBanco::Cancelar;
+        } else if (orden != SIN_ORDEN) {
             porLlenar = orden;
-            return OrdenBanco::Llenar;
+            aplicada = OrdenBanco::Llenar;
         }
-        return OrdenBanco::Ninguna;
+        _llenando.store(porLlenar != 0);
+        return aplicada;
     }
 
 private:
     static constexpr uint32_t SIN_ORDEN = 0;
     static constexpr uint32_t CANCELAR = UINT32_MAX;
     std::atomic<uint32_t> _orden{SIN_ORDEN};
+    std::atomic<bool> _llenando{false};
 };
 
 }  // namespace core

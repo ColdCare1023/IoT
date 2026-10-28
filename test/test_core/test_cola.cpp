@@ -464,6 +464,52 @@ void test_particiones_alojan_la_capacidad_nominal(void) {
     TEST_ASSERT_TRUE(0x160000u >= core::bytesMinimosParticion(config));  // partitions_produccion.csv
 }
 
+/// ADR-18, `buffer descartar`: se borra por tandas lo que había al pedirlo; lo
+/// que llega después, la cuarentena y el cursor tras reiniciar quedan bien.
+void test_descartar_por_tandas_respeta_lo_guardado_despues(void) {
+    AlmacenMemoria a;
+    PerdidasMemoria p;
+    core::ColaLecturas cola(a, p, config(3, 10));
+    cola.montar();
+    guardarN(cola, 1, 7);  // segmentos {1,2,3} {4,5,6} {7}
+    TransmisorGuion tx;
+    core::drenar(cola, tx, 2);  // 1 y 2 con acuse: quedan 5 pendientes
+    TEST_ASSERT_EQUAL_UINT32(5, cola.pendientes());
+
+    const uint32_t ultimo = cola.prepararDescarte();
+    guardarN(cola, 8, 8);  // llega después: segmento nuevo, fuera del descarte
+
+    bool quedan = false;
+    uint32_t descartados = cola.descartarTanda(ultimo, 2, quedan);
+    TEST_ASSERT_EQUAL_UINT32(4, descartados);  // 3 del primer segmento y 4, 5, 6
+    TEST_ASSERT_TRUE(quedan);
+    descartados += cola.descartarTanda(ultimo, 2, quedan);
+    TEST_ASSERT_EQUAL_UINT32(5, descartados);
+    TEST_ASSERT_FALSE(quedan);
+    TEST_ASSERT_EQUAL_UINT32(1, cola.pendientes());
+    TEST_ASSERT_EQUAL_UINT32(0, (uint32_t)a.cuarentena.size());
+
+    core::ColaLecturas tras(a, p, config(3, 10));
+    tras.montar();
+    TEST_ASSERT_EQUAL_UINT32(1, tras.pendientes());
+    core::RegistroLectura r;
+    uint8_t bruto[core::TAM_REGISTRO];
+    TEST_ASSERT_TRUE(tras.leerCabeza(r, bruto) == EstadoCabeza::Ok);
+    TEST_ASSERT_EQUAL_UINT32(8, r.seqNo);
+}
+
+void test_descartar_con_la_cola_vacia_no_hace_nada(void) {
+    AlmacenMemoria a;
+    PerdidasMemoria p;
+    core::ColaLecturas cola(a, p, config(3, 10));
+    cola.montar();
+    const uint32_t ultimo = cola.prepararDescarte();
+    TEST_ASSERT_EQUAL_UINT32(0, ultimo);
+    bool quedan = true;
+    TEST_ASSERT_EQUAL_UINT32(0, cola.descartarTanda(ultimo, 10, quedan));
+    TEST_ASSERT_FALSE(quedan);
+}
+
 void run_tests_cola(void) {
     RUN_TEST(test_particiones_alojan_la_capacidad_nominal);
     RUN_TEST(test_el_cerrojo_no_se_sostiene_durante_el_envio);
@@ -480,4 +526,6 @@ void run_tests_cola(void) {
     RUN_TEST(test_corte_entre_borrado_y_cursor);
     RUN_TEST(test_sin_margen_en_el_sistema_de_archivos_es_saturacion);
     RUN_TEST(test_perdidas_sobreviven_al_reinicio);
+    RUN_TEST(test_descartar_por_tandas_respeta_lo_guardado_despues);
+    RUN_TEST(test_descartar_con_la_cola_vacia_no_hace_nada);
 }

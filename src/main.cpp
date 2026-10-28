@@ -489,7 +489,7 @@ static void atenderConsola() {
                            " | demo excursion <temp_C> <n_lecturas>"
 #endif
 #if COMANDOS_BANCO
-                           " | buffer llenar <n> | buffer cancelar"
+                           " | buffer llenar <n> | buffer cancelar | buffer descartar"
 #endif
             );
             Serial.println("Claves NVS: wifi_ssid wifi_pass mqtt_host mqtt_token mqtt_relevo device_id "
@@ -591,6 +591,32 @@ static void atenderConsola() {
             if (resto == "cancelar") {
                 g_bancoOrdenes.pedirCancelacion();
                 Serial.println("[BANCO] cancelacion pedida: la confirma la tarea de captura.");
+            } else if (resto == "descartar") {
+                // Si el ensayo se corta a medias: sin esto, al volver a la
+                // identidad real los sintéticos pendientes irían uno a uno a
+                // cuarentena (BE-015). Antes se detiene el llenado y se espera a
+                // que la tarea de captura lo confirme; si no, podría escribir
+                // sintéticos después del descarte.
+                g_bancoOrdenes.pedirCancelacion();
+                const uint32_t inicio = millis();
+                while (!g_bancoOrdenes.detenido() && millis() - inicio < 3000UL) {
+                    alimentarWatchdog();
+                    delay(20);
+                }
+                if (!g_bancoOrdenes.detenido()) {
+                    Serial.println("[BANCO] El llenado no se detuvo: no se descarto nada; reintente.");
+                } else {
+                    const uint32_t descartados = buffer.descartarPendientes([]() {
+                        alimentarWatchdog();
+                        delay(1);  // cede la CPU a la captura entre tandas
+                    });
+                    Serial.printf("[BANCO] %lu registros pendientes descartados.\n", (unsigned long)descartados);
+                    core::ObjetoJSON d;
+                    d.cadena("clave", "buffer_sintetico");
+                    d.cadena("accion", "descartar");
+                    d.sinSigno("registros", descartados);
+                    encolarEvento("config_modificada", d.cerrar());
+                }
             } else if (sscanf(resto.c_str(), "llenar %ld", &n) == 1 && n > 0 &&
                        (uint32_t)n <= buffer.capacidad()) {
                 g_bancoOrdenes.pedirLlenado((uint32_t)n);
@@ -603,7 +629,7 @@ static void atenderConsola() {
                 d.sinSigno("registros", (uint32_t)n);
                 encolarEvento("config_modificada", d.cerrar());
             } else {
-                Serial.printf("Uso: buffer llenar <n 1..%lu> | buffer cancelar\n",
+                Serial.printf("Uso: buffer llenar <n 1..%lu> | buffer cancelar | buffer descartar\n",
                               (unsigned long)buffer.capacidad());
             }
 #endif

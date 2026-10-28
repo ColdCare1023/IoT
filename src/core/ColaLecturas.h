@@ -148,6 +148,16 @@ public:
     /// se cuenta y se reporta).
     bool cuarentenarCabeza(MotivoCuarentena motivo, const uint8_t bruto[TAM_REGISTRO]);
 
+    /// ADR-18 (solo banco, `buffer descartar`). Sella el último segmento para
+    /// que lo que se guarde después vaya a uno nuevo y quede fuera del
+    /// descarte, y devuelve su id (0 con la cola vacía).
+    uint32_t prepararDescarte();
+    /// Borra como mucho `maxSegmentos` segmentos de la cabeza con id hasta
+    /// `ultimoId` (el de `prepararDescarte`), por tandas para no retener el
+    /// cerrojo. Devuelve los registros pendientes descartados en la llamada;
+    /// `quedan` indica si falta algún segmento. La cuarentena no se toca.
+    uint32_t descartarTanda(uint32_t ultimoId, uint32_t maxSegmentos, bool& quedan);
+
     // ── Estado para diagnóstico / HU-48 ─────────────────────────────────
     uint32_t pendientes() const;
     uint32_t segmentos() const { return (uint32_t)_segmentos.size(); }

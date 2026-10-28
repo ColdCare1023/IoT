@@ -263,6 +263,28 @@ bool ColaLecturas::cuarentenarCabeza(MotivoCuarentena motivo, const uint8_t brut
     return _persistirCursor();
 }
 
+uint32_t ColaLecturas::prepararDescarte() {
+    if (_segmentos.empty()) return 0;
+    _segmentos.back().sellado = true;
+    return _segmentos.back().id;
+}
+
+uint32_t ColaLecturas::descartarTanda(uint32_t ultimoId, uint32_t maxSegmentos, bool& quedan) {
+    uint32_t descartados = 0;
+    for (uint32_t borrados = 0; borrados < maxSegmentos; ++borrados) {
+        if (_segmentos.empty() || _segmentos[0].id > ultimoId) break;
+        const Segmento& cabeza = _segmentos[0];
+        if (cabeza.registros > _cursorIndice) descartados += cabeza.registros - _cursorIndice;
+        _almacen.borrarSegmento(cabeza.id);
+        _segmentos.erase(_segmentos.begin());
+        _cursorIndice = 0;
+    }
+    quedan = !_segmentos.empty() && _segmentos[0].id <= ultimoId;
+    _persistirCursor();
+    _evaluarUmbral();
+    return descartados;
+}
+
 bool ColaLecturas::_persistirCursor() {
     uint8_t buf[TAM_CURSOR];
     buf[0] = 'C';
