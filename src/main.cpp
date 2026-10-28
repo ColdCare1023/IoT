@@ -255,10 +255,19 @@ static bool leerUltimaCaptura(core::RegistroLectura& r) {
 #if COMANDOS_BANCO
 // ADR-18: registros sintéticos pendientes de `buffer llenar <n>`. Los escribe
 // la tarea de captura (única dueña de g_seqNo), por tandas, entre capturas.
-static volatile uint32_t g_bancoPorLlenar = 0;
+// La consola no toca el contador: deja sus órdenes en el buzón.
+static core::BuzonLlenadoBanco g_bancoOrdenes;
+static uint32_t g_bancoPorLlenar = 0;  // solo la tarea de captura
 static constexpr uint32_t BANCO_TANDA = 20;  // por paso de 50 ms
 
 static void llenarBufferBanco() {
+    if (g_bancoOrdenes.aplicar(g_bancoPorLlenar) == core::OrdenBanco::Cancelar) {
+        // Lo imprime esta tarea: confirma que la cancelación se aplicó.
+        Serial.printf("[BANCO] llenado cancelado: pendientes=%lu/%lu ultimo_seq=%lu\n",
+                      (unsigned long)buffer.pendientes(), (unsigned long)buffer.capacidad(),
+                      (unsigned long)g_seqNo);
+        return;
+    }
     if (g_bancoPorLlenar == 0) return;
     core::RegistroLectura plantilla;
     if (!leerUltimaCaptura(plantilla)) return;
@@ -273,7 +282,7 @@ static void llenarBufferBanco() {
             g_bancoPorLlenar = 0;
             return;
         }
-        g_bancoPorLlenar = g_bancoPorLlenar - 1;
+        --g_bancoPorLlenar;
         if (r.seqNo % 1000 == 0) {
             Serial.printf("[BANCO] pendientes=%lu/%lu faltan=%lu\n", (unsigned long)buffer.pendientes(),
                           (unsigned long)buffer.capacidad(), (unsigned long)g_bancoPorLlenar);
@@ -580,11 +589,11 @@ static void atenderConsola() {
             // lecturas `simulated` (BE-015) y el nodo las pasa a cuarentena.
             long n = 0;
             if (resto == "cancelar") {
-                g_bancoPorLlenar = 0;
-                Serial.println("[BANCO] llenado cancelado.");
+                g_bancoOrdenes.pedirCancelacion();
+                Serial.println("[BANCO] cancelacion pedida: la confirma la tarea de captura.");
             } else if (sscanf(resto.c_str(), "llenar %ld", &n) == 1 && n > 0 &&
                        (uint32_t)n <= buffer.capacidad()) {
-                g_bancoPorLlenar = (uint32_t)n;
+                g_bancoOrdenes.pedirLlenado((uint32_t)n);
                 Serial.printf("[BANCO] %ld registros SINTETICOS (simulated=true, 5.00 C) desde boot=%lu "
                               "seq=%lu. 'buffer cancelar' para detener.\n",
                               n, (unsigned long)g_bootId, (unsigned long)(g_seqNo + 1));

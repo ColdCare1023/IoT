@@ -1,6 +1,7 @@
 #ifndef CORE_LLENADO_BANCO_H
 #define CORE_LLENADO_BANCO_H
 
+#include <atomic>
 #include <cstdint>
 
 #include "Registro.h"
@@ -47,6 +48,49 @@ inline RegistroLectura registroSintetico(const RegistroLectura& plantilla, uint3
     r.poner(BANDERA_SIMULADO, true);
     return r;
 }
+
+/// Orden que aplicó la tarea de captura (ver `BuzonLlenadoBanco::aplicar`).
+enum class OrdenBanco { Ninguna, Llenar, Cancelar };
+
+/**
+ * Órdenes de la consola para el llenado (`buffer llenar <n>`, `buffer cancelar`).
+ *
+ * La consola corre en la tarea de red y el llenado en la de captura. Cuando las
+ * dos escribían el contador, `buffer cancelar` podía perderse: el descuento lee,
+ * resta y escribe, y un 0 puesto por la consola entre la lectura y la escritura
+ * quedaba sobrescrito. Ahora la consola solo deja la orden aquí y la tarea de
+ * captura es la única que escribe el contador. El intercambio atómico no pierde
+ * órdenes; si llegan dos antes de aplicarse, vale la última.
+ */
+class BuzonLlenadoBanco {
+public:
+    /// Consola. `n` entre 1 y la capacidad del buffer.
+    void pedirLlenado(uint32_t n) {
+        if (n != SIN_ORDEN && n != CANCELAR) _orden.store(n);
+    }
+    /// Consola.
+    void pedirCancelacion() { _orden.store(CANCELAR); }
+
+    /// Tarea de captura, al empezar cada paso: aplica la orden pendiente al
+    /// contador, que solo ella escribe.
+    OrdenBanco aplicar(uint32_t& porLlenar) {
+        const uint32_t orden = _orden.exchange(SIN_ORDEN);
+        if (orden == CANCELAR) {
+            porLlenar = 0;
+            return OrdenBanco::Cancelar;
+        }
+        if (orden != SIN_ORDEN) {
+            porLlenar = orden;
+            return OrdenBanco::Llenar;
+        }
+        return OrdenBanco::Ninguna;
+    }
+
+private:
+    static constexpr uint32_t SIN_ORDEN = 0;
+    static constexpr uint32_t CANCELAR = UINT32_MAX;
+    std::atomic<uint32_t> _orden{SIN_ORDEN};
+};
 
 }  // namespace core
 

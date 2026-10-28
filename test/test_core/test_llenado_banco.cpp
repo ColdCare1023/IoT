@@ -45,9 +45,53 @@ void test_sin_sntp_el_sintetico_no_inventa_la_hora(void) {
     TEST_ASSERT_EQUAL_UINT32(0, r.capturadoEpoch);
 }
 
+/// `buffer cancelar` a mitad de una tanda deja el contador en 0 aunque la
+/// tarea de captura siga descontando hasta terminarla.
+void test_cancelar_a_mitad_de_una_tanda_deja_el_contador_en_cero(void) {
+    core::BuzonLlenadoBanco buzon;
+    uint32_t porLlenar = 0;
+    buzon.pedirLlenado(30000);
+    TEST_ASSERT_TRUE(buzon.aplicar(porLlenar) == core::OrdenBanco::Llenar);
+    TEST_ASSERT_EQUAL_UINT32(30000, porLlenar);
+
+    for (int i = 0; i < 7; ++i) --porLlenar;
+    buzon.pedirCancelacion();                  // llega a mitad de la tanda
+    for (int i = 0; i < 13; ++i) --porLlenar;  // la tanda termina sin verla
+
+    TEST_ASSERT_TRUE(buzon.aplicar(porLlenar) == core::OrdenBanco::Cancelar);
+    TEST_ASSERT_EQUAL_UINT32(0, porLlenar);
+    TEST_ASSERT_TRUE(buzon.aplicar(porLlenar) == core::OrdenBanco::Ninguna);
+    TEST_ASSERT_EQUAL_UINT32(0, porLlenar);
+}
+
+void test_si_llegan_dos_ordenes_vale_la_ultima(void) {
+    core::BuzonLlenadoBanco buzon;
+    uint32_t porLlenar = 0;
+    buzon.pedirLlenado(100);
+    buzon.pedirCancelacion();
+    TEST_ASSERT_TRUE(buzon.aplicar(porLlenar) == core::OrdenBanco::Cancelar);
+    TEST_ASSERT_EQUAL_UINT32(0, porLlenar);
+
+    buzon.pedirCancelacion();
+    buzon.pedirLlenado(50);
+    TEST_ASSERT_TRUE(buzon.aplicar(porLlenar) == core::OrdenBanco::Llenar);
+    TEST_ASSERT_EQUAL_UINT32(50, porLlenar);
+}
+
+void test_sin_orden_el_contador_no_cambia(void) {
+    core::BuzonLlenadoBanco buzon;
+    uint32_t porLlenar = 30;
+    buzon.pedirLlenado(0);  // fuera de rango: se ignora
+    TEST_ASSERT_TRUE(buzon.aplicar(porLlenar) == core::OrdenBanco::Ninguna);
+    TEST_ASSERT_EQUAL_UINT32(30, porLlenar);
+}
+
 void run_tests_llenado_banco(void) {
     RUN_TEST(test_la_tanda_respeta_el_maximo_y_lo_pedido);
     RUN_TEST(test_la_tanda_no_pasa_de_la_capacidad);
     RUN_TEST(test_el_registro_sintetico_va_marcado_y_en_rango);
     RUN_TEST(test_sin_sntp_el_sintetico_no_inventa_la_hora);
+    RUN_TEST(test_cancelar_a_mitad_de_una_tanda_deja_el_contador_en_cero);
+    RUN_TEST(test_si_llegan_dos_ordenes_vale_la_ultima);
+    RUN_TEST(test_sin_orden_el_contador_no_cambia);
 }
