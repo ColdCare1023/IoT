@@ -273,20 +273,27 @@ static void llenarBufferBanco() {
     if (!leerUltimaCaptura(plantilla)) return;
     const uint32_t tanda =
         core::tandaLlenadoBanco(g_bancoPorLlenar, buffer.pendientes(), buffer.capacidad(), BANCO_TANDA);
-    for (uint32_t i = 0; i < tanda; ++i) {
-        const core::RegistroLectura r =
-            core::registroSintetico(plantilla, ++g_seqNo, uptimeSegundos(), epochAhora());
-        if (buffer.guardar(r) != core::ResultadoGuardado::Guardado) {
-            LOG_E("Banco", "No se pudo escribir el registro sintetico seq=%lu: llenado detenido.",
-                  (unsigned long)r.seqNo);
-            g_bancoPorLlenar = 0;
-            return;
-        }
+    // La tanda entera se escribe con una operación de LittleFS por segmento,
+    // no una por registro: a ~7 registros/s el llenado de 30 000 tardaba una hora.
+    core::RegistroLectura lote[BANCO_TANDA];
+    const uint32_t uptime = uptimeSegundos();
+    const uint32_t epoch = epochAhora();
+    for (uint32_t i = 0; i < tanda; ++i) lote[i] = core::registroSintetico(plantilla, g_seqNo + 1 + i, uptime, epoch);
+    size_t guardados = 0;
+    const core::ResultadoGuardado resultado = buffer.guardarLote(lote, tanda, guardados);
+    for (size_t i = 0; i < guardados; ++i) {
+        ++g_seqNo;
         --g_bancoPorLlenar;
-        if (r.seqNo % 1000 == 0) {
+        if (g_seqNo % 1000 == 0) {
             Serial.printf("[BANCO] pendientes=%lu/%lu faltan=%lu\n", (unsigned long)buffer.pendientes(),
                           (unsigned long)buffer.capacidad(), (unsigned long)g_bancoPorLlenar);
         }
+    }
+    if (resultado != core::ResultadoGuardado::Guardado) {
+        LOG_E("Banco", "No se pudo escribir el registro sintetico seq=%lu: llenado detenido.",
+              (unsigned long)(g_seqNo + 1));
+        g_bancoPorLlenar = 0;
+        return;
     }
     if (tanda == 0 || g_bancoPorLlenar == 0) {
         Serial.printf("[BANCO] llenado terminado: pendientes=%lu/%lu ultimo_seq=%lu\n",
@@ -1144,6 +1151,7 @@ void setup() {
     // IOT-005: con la identidad bloqueada no se entrega token al cliente MQTT:
     // queda "no aprovisionado" (fallo cerrado) y las lecturas siguen en LittleFS.
     // g_bootId ya está calculado (arriba): el LWT lleva el arranque de esta sesión (HU-13).
+    mqtt.alEsperarAck(atenderDesafioPosesion);
     mqtt.configurar(g_config.mqttHost, g_config.deviceId,
                     g_config.identidadBloqueada ? String() : g_config.mqttToken, g_bootId);
     // IOT-006: con certificado de cliente el broker liga la conexión a la clave

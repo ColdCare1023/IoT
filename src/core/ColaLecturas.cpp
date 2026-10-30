@@ -178,6 +178,43 @@ ResultadoGuardado ColaLecturas::guardar(const RegistroLectura& registro) {
     return ResultadoGuardado::Guardado;
 }
 
+ResultadoGuardado ColaLecturas::guardarLote(const RegistroLectura* registros, size_t n, size_t& guardados) {
+    guardados = 0;
+    while (guardados < n) {
+        const bool hayCola = !_segmentos.empty() && !_segmentos.back().sellado &&
+                             _segmentos.back().registros < _config.registrosPorSegmento;
+        // Sin margen libre o sin segmento abierto con hueco: el camino de un
+        // registro decide (abre segmento, satura o cuenta la pérdida).
+        if (!hayCola || _almacen.bytesLibres() < _config.reservaBytesLibres) {
+            const ResultadoGuardado r = guardar(registros[guardados]);
+            if (r != ResultadoGuardado::Guardado) return r;
+            ++guardados;
+            continue;
+        }
+        Segmento& cola = _segmentos.back();
+        size_t k = _config.registrosPorSegmento - cola.registros;
+        if (k > n - guardados) k = n - guardados;
+        std::vector<uint8_t> buf(k * TAM_REGISTRO);
+        for (size_t i = 0; i < k; ++i) codificarRegistro(registros[guardados + i], &buf[i * TAM_REGISTRO]);
+        const size_t escritos = _almacen.anexar(cola.id, buf.data(), buf.size());
+        if (escritos != buf.size()) {
+            _erroresEscritura++;
+            const size_t completos = escritos / TAM_REGISTRO;
+            cola.registros += (uint32_t)completos;
+            guardados += completos;
+            cola.sellado = true;  // cola desalineada: nada más se escribe aquí
+            _registrarPerdida(registros[guardados]);
+            return ResultadoGuardado::ErrorEscritura;
+        }
+        cola.registros += (uint32_t)k;
+        guardados += k;
+        if (cola.registros >= _config.registrosPorSegmento) cola.sellado = true;
+        _cerrarEpisodioSiAbierto();
+        _evaluarUmbral();
+    }
+    return ResultadoGuardado::Guardado;
+}
+
 void ColaLecturas::_registrarPerdida(const RegistroLectura& r) {
     const uint32_t epoch = r.tiene(BANDERA_TIEMPO_SNTP) ? r.capturadoEpoch : 0;
     _perdidas.total++;

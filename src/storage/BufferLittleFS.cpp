@@ -239,6 +239,14 @@ core::ResultadoGuardado BufferLittleFS::guardar(const core::RegistroLectura& reg
     return r;
 }
 
+core::ResultadoGuardado BufferLittleFS::guardarLote(const core::RegistroLectura* registros, size_t n,
+                                                    size_t& guardados) {
+    xSemaphoreTakeRecursive(_mutex, portMAX_DELAY);
+    const core::ResultadoGuardado r = _cola.guardarLote(registros, n, guardados);
+    xSemaphoreGiveRecursive(_mutex);
+    return r;
+}
+
 core::ResumenDrenaje BufferLittleFS::drenar(core::Transmisor& transmisor, int maxPorCiclo) {
     return core::drenar(_cola, transmisor, maxPorCiclo, &_cerrojo);
 }

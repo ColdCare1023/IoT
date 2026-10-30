@@ -29,6 +29,8 @@ public:
     bool begin(bool& formateado, core::InformeMontaje& informe);
 
     core::ResultadoGuardado guardar(const core::RegistroLectura& registro);
+    /// Varias lecturas con una escritura por segmento (ver ColaLecturas::guardarLote).
+    core::ResultadoGuardado guardarLote(const core::RegistroLectura* registros, size_t n, size_t& guardados);
 
     /// Drena con el mutex tomado SOLO alrededor de cada operación de cola.
     core::ResumenDrenaje drenar(core::Transmisor& transmisor, int maxPorCiclo);

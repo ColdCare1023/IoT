@@ -24,6 +24,7 @@ public:
     std::vector<uint8_t> cuarentena;
     size_t libres = 1024 * 1024;
     int cortarProximaEscritura = -1;  ///< ≥0: la próxima escritura solo graba N bytes
+    int anexos = 0;                   ///< llamadas a `anexar`
 
     std::vector<uint32_t> listarSegmentos() override {
         std::vector<uint32_t> ids;
@@ -35,6 +36,7 @@ public:
         return it == segmentos.end() ? 0 : it->second.size();
     }
     size_t anexar(uint32_t id, const uint8_t* d, size_t n) override {
+        anexos++;
         size_t aEscribir = n;
         if (cortarProximaEscritura >= 0) {
             aEscribir = (size_t)cortarProximaEscritura < n ? (size_t)cortarProximaEscritura : n;
@@ -510,7 +512,46 @@ void test_descartar_con_la_cola_vacia_no_hace_nada(void) {
     TEST_ASSERT_FALSE(quedan);
 }
 
+void test_guardar_lote_escribe_una_vez_por_segmento_y_equivale_a_guardar(void) {
+    AlmacenMemoria a;
+    PerdidasMemoria p;
+    core::ColaLecturas cola(a, p, config(10, 10));
+    cola.montar();
+    std::vector<core::RegistroLectura> lote;
+    for (uint32_t s = 1; s <= 25; ++s) lote.push_back(lectura(s));
+
+    size_t guardados = 0;
+    TEST_ASSERT_TRUE(cola.guardarLote(lote.data(), lote.size(), guardados) == ResultadoGuardado::Guardado);
+
+    TEST_ASSERT_EQUAL_UINT32(25, (uint32_t)guardados);
+    TEST_ASSERT_EQUAL_UINT32(25, cola.pendientes());
+    // 25 registros en segmentos de 10: 3 segmentos. Un registro abre cada uno
+    // por el camino individual y el resto va en una sola escritura: 6 anexos,
+    // no 25.
+    TEST_ASSERT_TRUE(a.anexos <= 6);
+    TransmisorGuion tx;
+    core::drenar(cola, tx, 100);
+    TEST_ASSERT_EQUAL_UINT32(25, (uint32_t)tx.enviados.size());
+    for (uint32_t i = 0; i < 25; ++i) TEST_ASSERT_EQUAL_UINT32(i + 1, tx.enviados[i]);
+}
+
+void test_guardar_lote_con_la_cola_llena_guarda_lo_que_cabe(void) {
+    AlmacenMemoria a;
+    PerdidasMemoria p;
+    core::ColaLecturas cola(a, p, config(5, 2));  // 10 posiciones
+    cola.montar();
+    std::vector<core::RegistroLectura> lote;
+    for (uint32_t s = 1; s <= 14; ++s) lote.push_back(lectura(s));
+
+    size_t guardados = 0;
+    TEST_ASSERT_TRUE(cola.guardarLote(lote.data(), lote.size(), guardados) == ResultadoGuardado::SaturadoNoAlmacenado);
+    TEST_ASSERT_EQUAL_UINT32(10, (uint32_t)guardados);
+    TEST_ASSERT_EQUAL_UINT32(10, cola.pendientes());
+}
+
 void run_tests_cola(void) {
+    RUN_TEST(test_guardar_lote_escribe_una_vez_por_segmento_y_equivale_a_guardar);
+    RUN_TEST(test_guardar_lote_con_la_cola_llena_guarda_lo_que_cabe);
     RUN_TEST(test_particiones_alojan_la_capacidad_nominal);
     RUN_TEST(test_el_cerrojo_no_se_sostiene_durante_el_envio);
     RUN_TEST(test_fifo_estricto_entre_segmentos);

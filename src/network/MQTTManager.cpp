@@ -149,6 +149,7 @@ bool MQTTManager::esperarAck(uint32_t bootId, uint32_t seqNo, uint32_t timeoutMs
         }
         if (millis() - inicio >= timeoutMs || !_mqtt.connected()) return false;
         _mqtt.loop();
+        if (_alEsperarAck) _alEsperarAck();
         alimentarWatchdog();
         delay(10);
     }

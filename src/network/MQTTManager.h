@@ -60,6 +60,11 @@ public:
                     std::string& huella);
     core::MemoriaAcks& acks() { return _acks; }
 
+    /// HU-44: función que `esperarAck` llama en cada vuelta. Con una lectura
+    /// retenida el acuse no llega y la espera dura todo el timeout; sin esto el
+    /// desafío de posesión quedaba sin responder hasta que ésta terminara.
+    void alEsperarAck(void (*gancho)()) { _alEsperarAck = gancho; }
+
     const String& topicoLecturas() const { return _topicoLecturas; }
     const String& topicoEventos() const { return _topicoEventos; }
     const String& topicoAck() const { return _topicoAck; }
@@ -114,6 +119,7 @@ private:
     bool _hayOrdenOta = false;
     std::string _rechazoOta;
     std::string _nonceDesafio;
+    void (*_alEsperarAck)() = nullptr;
 };
 
 #endif  // MQTT_MANAGER_H

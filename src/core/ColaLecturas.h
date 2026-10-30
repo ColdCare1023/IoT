@@ -135,6 +135,12 @@ public:
     /// Guarda una lectura al final de la cola.
     ResultadoGuardado guardar(const RegistroLectura& registro);
 
+    /// Guarda `n` lecturas seguidas escribiendo cada tramo de un mismo segmento
+    /// en UNA operación del almacén (una llamada a LittleFS por tramo, no por
+    /// registro). Mismo resultado que `n` llamadas a `guardar`; se detiene en
+    /// el primer fallo. `guardados` recibe cuántas quedaron en la cola.
+    ResultadoGuardado guardarLote(const RegistroLectura* registros, size_t n, size_t& guardados);
+
     /// Lee el registro más antiguo sin acuse. `bruto` recibe los 40 bytes tal
     /// como están en flash (para cuarentena si está corrupto).
     EstadoCabeza leerCabeza(RegistroLectura& registro, uint8_t bruto[TAM_REGISTRO]);
