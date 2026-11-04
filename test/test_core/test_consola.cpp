@@ -86,6 +86,16 @@ void test_freno_de_intentos(void) {
     TEST_ASSERT_TRUE(freno.puedeIntentar(102));
 }
 
+void test_device_id_con_pendientes_solo_si_no_cambia_o_se_fuerza(void) {
+    // Cola vacía: cualquier id.
+    TEST_ASSERT_TRUE(core::cambioDeviceIdPermitido("ESP32_FARMACIA_01", "FARM-01-CDL", 0, false));
+    // Con pendientes, el mismo id no cambia la identidad: se acepta.
+    TEST_ASSERT_TRUE(core::cambioDeviceIdPermitido("ESP32_FARMACIA_01", "ESP32_FARMACIA_01", 3, false));
+    // Con pendientes, otro id se rechaza salvo que se fuerce.
+    TEST_ASSERT_FALSE(core::cambioDeviceIdPermitido("ESP32_FARMACIA_01", "FARM-01-CDL", 3, false));
+    TEST_ASSERT_TRUE(core::cambioDeviceIdPermitido("ESP32_FARMACIA_01", "FARM-01-CDL", 3, true));
+}
+
 void run_tests_consola(void) {
     RUN_TEST(test_sha256_vectores_fips);
     RUN_TEST(test_sha256_cruza_el_limite_de_bloque);
@@ -96,4 +106,5 @@ void run_tests_consola(void) {
     RUN_TEST(test_consola_bloqueada_solo_con_nodo_aprovisionado_y_clave);
     RUN_TEST(test_el_desbloqueo_caduca);
     RUN_TEST(test_freno_de_intentos);
+    RUN_TEST(test_device_id_con_pendientes_solo_si_no_cambia_o_se_fuerza);
 }

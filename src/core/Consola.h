@@ -21,6 +21,15 @@ namespace core {
 /// y `bloquear` no; todo lo demás sí, incluidos los desconocidos).
 bool comandoModifica(const std::string& verbo);
 
+/// `nvs set device_id`: los registros pendientes no llevan device_id (se pone
+/// al enviarlos), así que cambiar la identidad con la cola sin vaciar mandaría
+/// lecturas reales como de otro equipo. Solo se permite con la cola vacía o con
+/// `forzar`. Volver a escribir el MISMO id no cambia la identidad: se acepta
+/// aunque haya pendientes (el aprovisionamiento lo reenvía siempre, y el nodo
+/// ya capturó lecturas en los segundos que pasan desde que arrancó).
+bool cambioDeviceIdPermitido(const std::string& actual, const std::string& nuevo, uint32_t pendientes,
+                             bool forzar);
+
 /// Largo mínimo de una clave de servicio aceptable.
 constexpr size_t CLAVE_SERVICIO_MIN = 12;
 bool claveServicioAceptable(const std::string& clave);

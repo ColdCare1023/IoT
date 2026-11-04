@@ -573,7 +573,8 @@ static void atenderConsola() {
                         valor.trim();
                     }
                     const uint32_t pendientes = buffer.pendientes();
-                    if (pendientes > 0 && !forzar) {
+                    if (!core::cambioDeviceIdPermitido(std::string(g_config.deviceId.c_str()),
+                                                       std::string(valor.c_str()), pendientes, forzar)) {
                         Serial.printf("nvs set device_id RECHAZADO: hay %lu lecturas pendientes. Espere a que "
                                       "se entreguen"
 #if COMANDOS_BANCO

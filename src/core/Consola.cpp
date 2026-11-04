@@ -27,6 +27,11 @@ bool claveServicioCorrecta(const std::string& candidata, const std::string& huel
     return igualesTiempoConstante(huellaClaveServicio(candidata), huellaGuardada);
 }
 
+bool cambioDeviceIdPermitido(const std::string& actual, const std::string& nuevo, uint32_t pendientes,
+                             bool forzar) {
+    return forzar || pendientes == 0 || nuevo == actual;
+}
+
 bool FrenoIntentos::puedeIntentar(uint32_t ahoraMs) const {
     if (_fallos < MAX_INTENTOS) return true;
     return (uint32_t)(ahoraMs - _ultimoFalloMs) >= ESPERA_MS;  // tolera el desborde de millis()

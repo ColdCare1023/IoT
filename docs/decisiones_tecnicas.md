@@ -322,7 +322,9 @@ Cada decisión indica el requisito que la motiva y lo que se sacrifica.
      log serie con hora da la duración;
   5. con la cola vacía, `nvs set device_id ESP32_FARMACIA_01` y reiniciar.
   - `nvs set device_id` se rechaza mientras haya lecturas pendientes. `nvs set device_id <id> forzar` lo
-    permite, y `config_modificada` lleva entonces `pendientes_forzados`.
+    permite, y `config_modificada` lleva entonces `pendientes_forzados`. Reescribir el MISMO id se acepta
+    siempre: no cambia la identidad, y el aprovisionamiento lo reenvía con lecturas ya capturadas desde el
+    arranque.
   - Si el ensayo se corta a medias, `buffer descartar` detiene el llenado, espera a que la tarea de captura
     lo confirme y borra la cola por tandas de 10 segmentos, para no pasar el watchdog de 5 s. Lo que se
     capture después del comando no se borra. Se informa como `config_modificada` (`accion` = `descartar`,
