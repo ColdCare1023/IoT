@@ -12,8 +12,9 @@ compila para el ESP32 y pasa sus pruebas nativas.
 
 | Verificación | Resultado |
 |---|---|
-| Compilación `esp32dev` y `demo` (y variantes sin MC-38 / con sensado de energía) | ✅ sin warnings propios · RAM 14,6 % · Flash 79,6 % |
-| Pruebas nativas de `src/core/` (Unity) | ✅ 77/77 |
+| Compilación `esp32dev` y `demo` (y variantes sin MC-38 / con sensado de energía) | ✅ sin warnings propios · RAM 16,6 % · Flash 90,7 % (`esp32dev`, 04/11/2026) |
+| Pruebas nativas de `src/core/` (Unity) | ✅ 134/134 |
+| Cadena completa sin hardware (nodo virtual con `src/core` → EMQX TLS → backend → acuse → API) | ✅ 11/11 contra `Backend/infra-local` |
 | Contrato v1.0 validado con el esquema Pydantic del backend | ✅ (repo ColdCare1023/Backend, `contrato/`) |
 | Prueba en hardware real con sensores | ⏳ pendiente |
 
@@ -50,6 +51,16 @@ pio device monitor -e esp32dev       # guarda el log con marca de tiempo (filtro
 pio test -e native                   # pruebas (Windows sin MinGW: scripts\tests_nativos_msvc.cmd)
 pio run -e demo -t upload            # SOLO para la demostración (ESP32_DEMO_01)
 ```
+
+**Windows:** la primera compilación instala el toolchain de ESP-IDF con `idf_tools.py`, que aborta con
+«MSys/Mingw is not supported» si existe la variable `MSYSTEM`, y Git Bash la pone siempre (aunque se haga
+`env -u MSYSTEM`). Hacer ese primer `pio run` desde PowerShell, CMD o la terminal de VS Code; después
+Git Bash también compila. `Backend/infra-local/scripts/flash_coldcare.sh` ya lo resuelve solo.
+
+**Probar sin el ESP32:** `tools/nodo_core.cpp` expone `src/core` (telemetría, eventos, LWT, acuses,
+desafío de posesión) como programa de línea de comandos; `Backend/infra-local/scripts/nodo_virtual.py` lo
+usa para hacer de nodo contra la pila local y comprobar conexión, lecturas, acuses, duplicados, LWT y lo que
+devuelve la API. Cómo compilarlo: cabecera de `tools/nodo_core.cpp`.
 
 Binario reproducible (IOT-010): plataforma, librerías y PlatformIO están fijados por versión exacta, y
 con `SOURCE_DATE_EPOCH` el mismo commit produce el mismo `firmware.bin`. CI publica el binario y su

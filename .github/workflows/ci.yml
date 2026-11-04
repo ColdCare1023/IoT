@@ -18,6 +18,14 @@ jobs:
       - run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
       - name: Pruebas nativas de src/core (Unity)
         run: pio test -e native
+      # El nodo virtual (pruebas sin hardware contra Backend/infra-local) usa
+      # src/core tal cual: si el núcleo cambia y la herramienta queda
+      # desfasada, falla aquí y no el día que hace falta.
+      - name: Nodo virtual (tools/nodo_core.cpp) compila con src/core
+        run: |
+          mkdir -p .pio/gen
+          g++ -std=c++17 -Wall -Wextra -Isrc src/core/*.cpp tools/nodo_core.cpp -o .pio/gen/nodo_core
+          .pio/gen/nodo_core lwt ESP32_FARMACIA_01 1 | grep -q '"event_type":"lwt_offline"'
       - name: Compilar firmware del local y firmware demo
         run: pio run -e esp32dev -e demo
       # IOT-010: huella SHA-256 de cada binario, para registrar la versión
