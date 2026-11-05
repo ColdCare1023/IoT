@@ -47,8 +47,7 @@ static const uint8_t BANDERA_TIEMPO_SNTP     = 0x01;  ///< época válida por SN
 static const uint8_t BANDERA_MC38_INSTALADO  = 0x02;
 static const uint8_t BANDERA_PUERTA_ABIERTA  = 0x04;  ///< hubo apertura en la ventana
 static const uint8_t BANDERA_SIMULADO        = 0x08;  ///< lectura inyectada en modo demo
-static const uint8_t BANDERA_SENSADO_ENERGIA = 0x10;  ///< hay sensado de suministro instalado
-static const uint8_t BANDERA_EN_RESPALDO     = 0x20;  ///< alimentado por el Mini UPS al capturar
+// 0x10 y 0x20: reservados (sin uso; el nodo no tiene respaldo ni sensado de energía).
 
 struct RegistroLectura {
     uint32_t bootId = 0;

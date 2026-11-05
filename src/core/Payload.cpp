@@ -118,12 +118,9 @@ std::string serializarTelemetria(const RegistroLectura& r, const std::string& de
         o.cadena("mc38_status", "not_installed");
     }
 
-    // ── Energía (solo si hay sensado de suministro instalado) ─────────────
-    if (r.tiene(BANDERA_SENSADO_ENERGIA)) {
-        o.cadena("power_source", r.tiene(BANDERA_EN_RESPALDO) ? "backup" : "mains");
-    } else {
-        o.nulo("power_source");
-    }
+    // power_source: campo reservado del contrato v1.0. El nodo se alimenta solo
+    // de la red eléctrica y no tiene sensado de suministro: siempre null.
+    o.nulo("power_source");
 
     o.booleano("sensor_fault", !dsOk || !tOk || !hOk);
     o.cadena("firmware_version", textoVersionFirmware(r.fwMayor, r.fwMenor, r.fwParche));

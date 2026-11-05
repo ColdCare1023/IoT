@@ -231,8 +231,6 @@ void test_payload_peor_caso_cabe_y_el_exceso_no_se_publica(void) {
     r.poner(core::BANDERA_PUERTA_ABIERTA, true);
     r.puertaAbiertaS = 65535;
     r.puertaRachaS = 65535;
-    r.poner(core::BANDERA_SENSADO_ENERGIA, true);
-    r.poner(core::BANDERA_EN_RESPALDO, true);
     r.poner(core::BANDERA_SIMULADO, true);
     r.fwMayor = r.fwMenor = r.fwParche = 255;
     const std::string largo(50, 'X');

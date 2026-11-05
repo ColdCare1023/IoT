@@ -8,7 +8,7 @@
 /**
  * Cola en RAM de eventos de diagnóstico pendientes de publicar en
  * `farmacias/<device_id>/eventos` (arranque, buffer al 80 %, saturación,
- * conmutación a respaldo, reconexión prolongada...).
+ * reconexión prolongada...).
  *
  * Se llena desde cualquier tarea y la vacía la tarea de red cuando hay
  * sesión MQTT. Los eventos son diagnóstico, NO la variable del experimento:

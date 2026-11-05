@@ -63,7 +63,7 @@ y `.../ota`. Solo la cuenta del backend publica en `farmacias/+/ack` y `farmacia
 | `door_open_s` | uint16 \| `null` | Segundos abierta en la ventana. |
 | `door_open_streak_s` | uint16 \| `null` | Segundos que lleva abierta la puerta **sin cerrarse** (apertura en curso al capturar); `null` si está cerrada. El aviso de apertura prolongada (HU-04 esc. 3, HU-35) lo aplica el backend con su umbral configurado. |
 | `mc38_status` | `installed` \| `not_installed` | |
-| `power_source` | `mains` \| `backup` \| `null` | `null` si el nodo no tiene sensado de suministro. |
+| `power_source` | `mains` \| `backup` \| `null` | Reservado en v1.0: siempre `null` (el nodo se alimenta de la red eléctrica y no tiene sensado de suministro). |
 | `sensor_fault` | bool | `true` si DS18B20 o SHT31 fallaron. |
 | `firmware_version` | `vX.Y.Z` | Versión con la que se **capturó** la lectura. |
 | `simulated` | `true` (opcional) | Solo firmware `demo`. Nunca en producción. |
@@ -145,8 +145,6 @@ sigue reteniendo. El nonce caduca a los 10 min y sirve una vez; el backend lo re
 | `prueba_posesion` | `nonce`, `hmac` (respuesta al desafío de 2.1) | HU-44 |
 | `lectura_vigente` | `boot_id`, `seq_no`, `temperatura_interna` (null con sensor en falla), `captured_at` (null sin SNTP), `time_quality`, `uptime_s`. Solo mientras el drenaje está detenido por falta de acuse, una vez por captura: el backend aplica la regla 2-8 °C durante la retención; no la persiste como lectura. El nodo no sabe por qué falta el acuse, así que también la publica con el backend o PostgreSQL caídos (HU-22); fuera de una retención el backend la descarta sin auditarla. No es un error | HU-44 |
 | `puerta` | `door_open` (true = abierta); `occurred_at` es la hora del cambio | HU-04 esc. 1 |
-| `conmutacion_respaldo` / `suministro_restablecido` | `desde`/`hacia` · `duracion_respaldo_s` | HU-52 esc. 1 (solo con sensado) |
-| `respaldo_autonomia_critica` | `transcurrido_s`, `autonomia_medida_min`, `base` | HU-52 esc. 3 (estimación) |
 | `config_modificada` | `clave` (nombre de la clave NVS, nunca el valor), `accion` (`set`/`borrar`; `generar` para `mqtt_key`). `pendientes_forzados` si `device_id` se cambió con `forzar` y lecturas en cola. Con `clave` = `buffer_sintetico` (solo banco): `accion` `llenar`/`descartar` y `registros` | IOT-002, IOT-006, ADR-18 |
 | `reinicio_manual` | — (se publica antes del DISCONNECT ordenado, que no dispara el LWT) | IOT-002 |
 | `consola_desbloqueada` | — (desbloqueo con la clave de servicio, 10 min) | IOT-002 |

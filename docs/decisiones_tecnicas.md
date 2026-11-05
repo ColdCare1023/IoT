@@ -64,15 +64,13 @@ Cada decisión indica el requisito que la motiva y lo que se sacrifica.
 - **Salida futura.** Con el core ya en 3.x (ADR-11), pasar a `esp-mqtt` con `CONFIG_MQTT_PROTOCOL_5`
   exige compilar el framework con `custom_sdkconfig` y revalidar el contrato de acuses en hardware.
 
-## ADR-07 · Sin lectura ADC de batería (GPIO 34 eliminado)
+## ADR-07 · Sin respaldo de energía (fuera de alcance)
 
-- **Contexto.** El Mini UPS Forza 5 V no expone nivel de batería. El pin quedaba flotante: picos y
-  lecturas falsas.
-- **Decisión.** No hay lectura analógica. La continuidad se evidencia por la secuencia ininterrumpida
-  `boot_id`/`seq_no` durante el corte (lo verifica el analizador de ensayos de QA a partir de las líneas `[BOOT]`/`[CAP]`).
-  Opcional: entrada **digital** GPIO 26 que ve el 5 V del adaptador **antes** del UPS →
-  `power_source` y eventos de conmutación; el aviso de autonomía crítica es una **estimación** a partir
-  de la autonomía medida en el ensayo C-6.
+- **Contexto.** El nodo se alimenta de la red eléctrica y no incluye batería ni UPS.
+- **Decisión.** Ante un corte el nodo deja de medir. Lo ya capturado permanece en el buffer FIFO de
+  LittleFS y se reenvía al volver la energía, con un `boot_id` nuevo; el backend reporta el hueco como
+  incidente `NO_DATA`. No hay lectura analógica de batería ni sensado de suministro; `power_source` queda
+  reservado (siempre `null`) en el contrato v1.0.
 
 ## ADR-08 · Excursiones simuladas solo en un firmware aparte
 

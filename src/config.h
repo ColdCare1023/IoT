@@ -45,28 +45,12 @@
 #define SHT31_DIRECCION 0x44
 #define PIN_MC38      27   // reed switch a GND, pull-up INTERNO (no es pin de strapping)
 #define PIN_BOTON_DEMO 0   // botón BOOT de la placa; solo se usa en el entorno `demo`
-#define PIN_SENSADO_ENERGIA 26  // opcional: divisor desde el adaptador de 5 V ANTES del Mini UPS
 
 // ¿Hay MC-38 instalado en este nodo? Sin él, door_open = null (HU-04 esc. 4).
 #ifndef MC38_INSTALADO
   #define MC38_INSTALADO 1
 #endif
 
-// HU-52: por defecto NO hay sensado de energía. Las lecturas ADC de batería en
-// GPIO 34 se eliminaron: con el Mini UPS Forza no existe una señal de nivel
-// que medir y la entrada flotante producía valores falsos. La continuidad se
-// demuestra por la secuencia ininterrumpida boot_id/seq_no durante el corte.
-// Con =1 se usa una entrada DIGITAL (GPIO 26) que ve el 5 V del adaptador de
-// pared antes del Mini UPS → power_source = "mains"/"backup" en cada lectura.
-#ifndef SENSADO_ENERGIA_INSTALADO
-  #define SENSADO_ENERGIA_INSTALADO 0
-#endif
-// Autonomía del Mini UPS MEDIDA en el ensayo C-6 (minutos). 0 = aún no medida:
-// no se emite el aviso estimado de autonomía crítica (HU-52 esc. 3).
-#ifndef AUTONOMIA_RESPALDO_MEDIDA_MIN
-  #define AUTONOMIA_RESPALDO_MEDIDA_MIN 0
-#endif
-#define AVISO_AUTONOMIA_PCT 80
 
 // Modo demo (entorno `demo`): permite inyectar excursiones SIMULADAS marcadas
 // con "simulated": true. Jamás compilar en el firmware del local real.
