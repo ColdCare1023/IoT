@@ -92,11 +92,6 @@ int main(int argc, char** argv) {
     ok &= escribir(salida, "telemetria_retrofechada.json", serializarTelemetria(r, DEVICE, conBase));
 
     r = base();
-    r.poner(BANDERA_SENSADO_ENERGIA, true);
-    r.poner(BANDERA_EN_RESPALDO, true);
-    ok &= escribir(salida, "telemetria_con_respaldo.json", serializarTelemetria(r, DEVICE, sinBase));
-
-    r = base();
     r.tempDsCenti = 1250;
     r.poner(BANDERA_SIMULADO, true);
     ok &= escribir(salida, "telemetria_demo_excursion_simulada.json",
