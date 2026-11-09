@@ -97,6 +97,7 @@
 #define MQTT_KEEPALIVE_S          60
 #define MQTT_COMMAND_TIMEOUT_MS   5000   // espera de CONNACK / PUBACK / SUBACK
 #define TLS_HANDSHAKE_TIMEOUT_MS  10000
+#define DNS_PEOR_BLOQUEO_MS       15000   // resolver un host inalcanzable (H1 del banco)
 #define ACK_LOGICO_TIMEOUT_MS     8000   // espera del acuse del backend tras el PUBACK
 #define CERT_CA_ARCHIVO           "/certs/root_ca.pem"
 #define MQTT_BUFFER_BYTES         1024

@@ -62,7 +62,9 @@ void MQTTManager::configurar(const String& host, const String& deviceId, const S
     // degradar. La garantía que depende de nosotros es autenticar al
     // servidor: CA + verificación del nombre (el host viaja en el SNI).
     _tls.setHandshakeTimeout(TLS_HANDSHAKE_TIMEOUT_MS / 1000);
-    _tls.setTimeout(TLS_HANDSHAKE_TIMEOUT_MS / 1000);
+    // Stream::setTimeout va en milisegundos en Arduino-ESP32 3.x: con segundos la
+    // conexión TCP tenía 10 ms de plazo, insuficiente fuera de la red local.
+    _tls.setTimeout(TLS_HANDSHAKE_TIMEOUT_MS);
     _caCargada = _cargarCA();
     if (!_caCargada) LOG_E("MQTT", "Sin CA valida: NO se conectara (las lecturas siguen en LittleFS).");
     if (!_aprovisionado) LOG_E("MQTT", "Sin host o token MQTT: nodo no aprovisionado.");
