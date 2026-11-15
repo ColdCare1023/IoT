@@ -12,31 +12,31 @@ compila para el ESP32 y pasa sus pruebas nativas.
 
 | Verificación | Resultado |
 |---|---|
-| Compilación `esp32dev` y `demo` (y variante sin MC-38) | ✅ sin warnings propios · RAM 16,6 % · Flash 90,7 % (`esp32dev`, 04/11/2026) |
-| Pruebas nativas de `src/core/` (Unity) | ✅ 134/134 |
+| Compilación `esp32dev` y `demo` (y variante sin MC-38) | ✅ sin warnings propios · RAM 16,7 % · Flash 91,7 % (`esp32dev`, 14/11/2026, v1.2.1) |
+| Pruebas nativas de `src/core/` (Unity) | ✅ 174/174 |
 | Cadena completa sin hardware (nodo virtual con `src/core` → EMQX TLS → backend → acuse → API) | ✅ 11/11 contra `Backend/infra-local` |
 | Contrato v1.0 validado con el esquema Pydantic del backend | ✅ (repo ColdCare1023/Backend, `contrato/`) |
-| Prueba en hardware real con sensores | ⏳ pendiente |
+| Prueba en hardware real con sensores | ⏳ pendiente; lo que falta de la v1.2.1 (H1, broker caído y AP apagado ≥ 2 h): [`docs/evidencias/H1_validacion_en_hardware_pendiente.md`](docs/evidencias/H1_validacion_en_hardware_pendiente.md) |
 
 ## Historias de usuario → módulos
 
 | HU | Qué implementa | Módulos |
 |---|---|---|
 | HU-01 | DS18B20 con CRC, timeout y `SENSOR_FAULT` con motivo; `boot_id`/`seq_no`; hora solo por SNTP | `sensors/DS18B20Sensor`, `core/Sensores`, `core/Tiempo`, `system/Reloj` |
-| HU-02 | SHT31 temperatura (I²C, CRC Sensirion, reintentos), falla aislada del DS18B20 | `sensors/SHT31Sensor` |
+| HU-02 | SHT31 temperatura (I²C, CRC Sensirion, reintentos), falla aislada del DS18B20; tras 3 fallas de comunicación seguidas libera el bus (9 pulsos de SCL + STOP) y reinicia el sensor | `sensors/SHT31Sensor`, `core/BusI2C` |
 | HU-03 | SHT31 humedad relativa, validación 0–100 %HR | `core/Sensores` |
-| HU-04 | MC-38 con antirrebote 50 ms, apertura prolongada, `not_installed` | `sensors/MC38Sensor`, `core/Antirrebote` |
+| HU-04 | MC-38 con antirrebote 50 ms, apertura prolongada, `not_installed`; cambios de puerta guardados en LittleFS hasta su PUBACK | `sensors/MC38Sensor`, `core/Antirrebote`, `core/BitacoraPuerta`, `storage/BitacoraPuertaLittleFS` |
 | HU-05 | Contrato de telemetría v1.0, `null` + `SENSOR_FAULT`, tope 768 B | `core/Payload`, `core/Registro`, `core/Json`, [`docs/contrato_payload_v1.md`](docs/contrato_payload_v1.md) |
 | HU-06 | Buffer offline FIFO en LittleFS: 80 %, saturación sin sobrescribir, contador persistente, recuperación tras corte | `core/ColaLecturas`, `storage/BufferLittleFS` |
 | HU-07 | Liberación **solo** con acuse lógico del backend (no con PUBACK), cuarentena, reanudación FIFO | `core/Ack`, `network/TransmisorMQTT` |
-| HU-08 | Wi-Fi con backoff 1→60 s y señal de diagnóstico; consola de aprovisionamiento | `network/WiFiManager`, `core/Backoff` |
-| HU-09 | MQTT sobre TLS con CA y hostname validados, sin fallback | `network/MQTTManager` |
-| HU-13 | LWT, evento `online`, DISCONNECT ordenado, eventos de diagnóstico | `network/MQTTManager`, `system/Eventos` |
+| HU-08 | Wi-Fi con backoff 1→60 s; episodio de reconexión (intentos, desde cuándo, reinicios) persistido en NVS; consola de aprovisionamiento | `network/WiFiManager`, `core/Backoff`, `core/Reconexion`, `system/DiagnosticoReconexion` |
+| HU-09 | MQTT sobre TLS con CA y hostname validados, sin fallback; plazos en la unidad de cada API (H1) | `network/MQTTManager`, `core/PlazosConexion` |
+| HU-13 | LWT, evento `online`, DISCONNECT ordenado con `desconexion_ordenada`, eventos de diagnóstico | `network/MQTTManager`, `system/Eventos`, `core/EstadoNodo` |
 | HU-14 | Solo 8883: puerto no configurable, host sin esquema ni puerto | `config.h`, `core/Credenciales` |
 | HU-21 | Firmware `demo` con excursión simulada (`simulated: true`) | `main.cpp` (`#if MODO_DEMO`) |
 | HU-43 | `device_id` por NVS para alta/reemplazo | `system/Configuracion` |
 | HU-44 | Rotación/revocación del token sin reiniciar | `main.cpp`, `system/Configuracion` |
-| HU-48 | Evento `estado_nodo` (pendientes, pérdidas, RSSI) | `main.cpp` |
+| HU-48 | Evento `estado_nodo` (pendientes y su rango `pendientes_desde`/`pendientes_hasta`, pérdidas, RSSI, episodio de reconexión) | `core/EstadoNodo`, `core/ColaLecturas`, `main.cpp` |
 
 Decisiones y desviaciones documentadas (MQTT 3.1.1 en vez de 5.0, registros binarios, cuarentena…):
 [`docs/decisiones_tecnicas.md`](docs/decisiones_tecnicas.md).

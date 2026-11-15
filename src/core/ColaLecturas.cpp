@@ -343,6 +343,36 @@ bool ColaLecturas::_persistirCursor() {
 // Estado y avisos
 // =========================================================================
 
+bool ColaLecturas::_leerRegistro(uint32_t idSegmento, uint32_t indice, RegistroLectura& registro) {
+    uint8_t bruto[TAM_REGISTRO];
+    if (!_almacen.leer(idSegmento, (size_t)indice * TAM_REGISTRO, bruto, TAM_REGISTRO)) return false;
+    return decodificarRegistro(bruto, registro);
+}
+
+void ColaLecturas::extremosPendientes(RegistroLectura& primero, bool& hayPrimero, RegistroLectura& ultimo,
+                                      bool& hayUltimo) {
+    hayPrimero = false;
+    hayUltimo = false;
+    if (pendientes() == 0) return;
+
+    // El más antiguo: el del cursor; si la cabeza ya está consumida (abierta y
+    // sin normalizar), el primero del segmento siguiente.
+    size_t i = 0;
+    uint32_t indice = _cursorIndice;
+    while (i < _segmentos.size() && indice >= _segmentos[i].registros) {
+        ++i;
+        indice = 0;
+    }
+    if (i < _segmentos.size()) hayPrimero = _leerRegistro(_segmentos[i].id, indice, primero);
+
+    // El más nuevo: el último registro completo del último segmento con datos.
+    for (size_t j = _segmentos.size(); j-- > 0;) {
+        if (_segmentos[j].registros == 0) continue;
+        hayUltimo = _leerRegistro(_segmentos[j].id, _segmentos[j].registros - 1, ultimo);
+        break;
+    }
+}
+
 uint32_t ColaLecturas::pendientes() const {
     uint32_t total = 0;
     for (const auto& s : _segmentos) total += s.registros;

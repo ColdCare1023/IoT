@@ -64,3 +64,9 @@
 ## 6. Pendiente / fuera de alcance de esta evidencia
 - Corte de Wi-Fi en caliente (apagar el router con el nodo conectado): pendiente de ejecutar.
 - RSSI medido en el banco: −68 a −82 dBm (criterio C-5: ≥ −65 dBm); la medición válida es la del local.
+- **H1 (v1.2.1, rama `fix/firmware-r2`):** el plazo TCP/TLS pasaba a `Stream::setTimeout()` en segundos
+  (10 ms) y el watchdog no cubría el intento de conexión: con el broker inalcanzable el nodo reiniciaba en
+  bucle por TASK_WDT y el diagnóstico (en RAM) se perdía. Corregido y probado en software; el episodio de
+  reconexión ahora se guarda en NVS. Pendiente: broker inalcanzable y AP apagado ≥ 2 h sin `TASK_WDT`
+  y grabar ESP32_FARMACIA_01 (ensayos 1–3 de
+  [`H1_validacion_en_hardware_pendiente.md`](H1_validacion_en_hardware_pendiente.md)).

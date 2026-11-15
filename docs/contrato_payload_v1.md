@@ -140,13 +140,14 @@ sigue reteniendo. El nonce caduca a los 10 min y sirve una vez; el backend lo re
 | `buffer_80` | `ocupacion_pct`, `pendientes`, `capacidad` | HU-06 |
 | `buffer_saturado` | `perdidas_total`, `perdidas_episodio`, `episodio_abierto`, `desde_boot_id`, `desde_seq_no`, `desde`, `hasta_boot_id`, `hasta_seq_no`, `hasta`, `causa` | HU-06 esc. 3, HU-48 esc. 2 |
 | `registros_en_cuarentena` | `corruptos`, `rechazados_backend`, `invalidos`, `cuarentena_total` | HU-06 esc. 2 |
-| `wifi_reconexion_prolongada` | `intentos_fallidos`, `duracion_s`, `umbral_intentos` | HU-08 esc. 3 |
+| `wifi_reconexion_prolongada` | `intentos_fallidos` (Wi-Fi y broker, en todo el episodio), `duracion_s` (desde el inicio del episodio; null si empezó y terminó en arranques distintos sin hora), `umbral_intentos`; desde la v1.2.1 también `desde`, `hasta` (ISO 8601 o null), `reinicios` (reinicios del nodo con el episodio abierto) y `etapa` (`wifi`/`broker`). Se publica al volver la sesión si el episodio llegó al umbral o hubo reinicios en medio. El episodio se guarda en NVS: sobrevive a un reinicio por watchdog | HU-08 esc. 3 |
 | `credencial_rotada` | — | HU-44 esc. 2 |
 | `prueba_posesion` | `nonce`, `hmac` (respuesta al desafío de 2.1) | HU-44 |
 | `lectura_vigente` | `boot_id`, `seq_no`, `temperatura_interna` (null con sensor en falla), `captured_at` (null sin SNTP), `time_quality`, `uptime_s`. Solo mientras el drenaje está detenido por falta de acuse, una vez por captura: el backend aplica la regla 2-8 °C durante la retención; no la persiste como lectura. El nodo no sabe por qué falta el acuse, así que también la publica con el backend o PostgreSQL caídos (HU-22); fuera de una retención el backend la descarta sin auditarla. No es un error | HU-44 |
-| `puerta` | `door_open` (true = abierta); `occurred_at` es la hora del cambio | HU-04 esc. 1 |
+| `puerta` | `door_open` (true = abierta); `occurred_at` es la hora del cambio. Desde la v1.2.1 el cambio se guarda en LittleFS hasta su PUBACK (sobrevive a reinicios y desconexiones) y el evento lleva el `boot_id` y el `uptime_s` del arranque en que ocurrió, que puede ser anterior al vigente; sin SNTP en ese arranque, `occurred_at` es null y `time_quality` `unsynced` | HU-04 esc. 1 |
 | `config_modificada` | `clave` (nombre de la clave NVS, nunca el valor), `accion` (`set`/`borrar`; `generar` para `mqtt_key`). `pendientes_forzados` si `device_id` se cambió con `forzar` y lecturas en cola. Con `clave` = `buffer_sintetico` (solo banco): `accion` `llenar`/`descartar` y `registros` | IOT-002, IOT-006, ADR-18 |
 | `reinicio_manual` | — (se publica antes del DISCONNECT ordenado, que no dispara el LWT) | IOT-002 |
+| `desconexion_ordenada` | `motivo` (`rotacion_credencial`, `prueba_relevo`, `ota_revertida`). Se publica antes de un DISCONNECT voluntario, que no dispara el LWT. **Nuevo en la v1.2.1: el backend debe añadirlo a `EventoV1.event_type`**; hasta entonces lo descarta con un aviso, sin efecto | HU-13 esc. 2 |
 | `consola_desbloqueada` | — (desbloqueo con la clave de servicio, 10 min) | IOT-002 |
 | `consola_desbloqueo_fallido` | `intentos` (fallos seguidos al activarse el freno) | IOT-002 |
 | `ota_iniciada` | `version` (descarga en curso) | IOT-004 |
@@ -155,7 +156,7 @@ sigue reteniendo. El nonce caduca a los 10 min y sirve una vez; el backend lo re
 | `ota_fallida` | `version`, `resultado` (`sin_ca`, `descarga`, `tamano_distinto`, `huella_distinta`, `escritura`) | IOT-004 |
 | `ota_confirmada` | `firmware_version`, `particion` (la imagen nueva superó el autodiagnóstico) | IOT-004 |
 | `ota_revertida` | `firmware_version`, `particion` (el bootloader volvió a la imagen anterior) | IOT-004 |
-| `estado_nodo` (cada 5 min) | `pendientes`, `ocupacion_pct`, `capacidad`, `perdidas_total`, `cuarentena`, `ultimo_seq_no`, `rssi_dbm`, `heap_libre`, `heap_minimo`, `intervalo_s`, `pubacks_sin_ack`, `acks_huella_ajena`, `eventos_descartados`, `reloj_sntp`, `saltos_reloj_rechazados` | HU-48 esc. 1, C-5 |
+| `estado_nodo` (cada 5 min) | `pendientes`, `ocupacion_pct`, `capacidad`, `fs_total_bytes`, `fs_libres_bytes`, `perdidas_total`, `cuarentena`, `cuarentena_desbordada`, `ultimo_seq_no`, `rssi_dbm`, `heap_libre`, `heap_minimo`, `intervalo_s`, `pubacks_sin_ack`, `acks_huella_ajena`, `eventos_descartados`, `reloj_sntp`, `saltos_reloj_rechazados`. Desde la v1.2.1, al final: `pendientes_desde`, `pendientes_hasta` (captured_at del pendiente más antiguo y del más nuevo; null sin pendientes o sin hora honesta), `reconexion_intentos`, `reconexion_desde`, `reconexion_hasta`, `reconexion_reinicios`, `reconexion_etapa` (episodio en curso o el último), `puerta_pendientes`, `puerta_descartados`, `sht31_recuperaciones`. 28 claves y ≤ 1024 B en el peor caso (límites de `contrato_v1.py`) | HU-48 esc. 1, HU-08 esc. 3, HU-04, HU-02, C-5 |
 
 ## 3.1 Orden OTA (`.../ota`) — backend → nodo (IOT-004)
 

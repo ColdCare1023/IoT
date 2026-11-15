@@ -23,6 +23,11 @@ void run_tests_ota(void);
 void run_tests_pem(void);
 void run_tests_posesion(void);
 void run_tests_llenado_banco(void);
+void run_tests_plazos_conexion(void);
+void run_tests_reconexion(void);
+void run_tests_bitacora_puerta(void);
+void run_tests_bus_i2c(void);
+void run_tests_estado_nodo(void);
 
 int main(int, char**) {
     UNITY_BEGIN();
@@ -40,5 +45,10 @@ int main(int, char**) {
     run_tests_pem();
     run_tests_posesion();
     run_tests_llenado_banco();
+    run_tests_plazos_conexion();
+    run_tests_reconexion();
+    run_tests_bitacora_puerta();
+    run_tests_bus_i2c();
+    run_tests_estado_nodo();
     return UNITY_END();
 }

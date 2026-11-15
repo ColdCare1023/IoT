@@ -87,6 +87,10 @@ public:
     int ultimoCodigoRetorno() { return (int)_mqtt.returnCode(); }
     int ultimoError() { return (int)_mqtt.lastError(); }
     uint32_t acksIgnorados() const { return _acksIgnorados; }
+    /// Intentos de conexión al broker fallidos desde el arranque (HU-08 esc. 3).
+    /// Un `conectar()` que no llega a intentarlo (enfriamiento, sin CA o sin
+    /// credenciales) no cuenta.
+    uint32_t fallosTotales() const { return _fallosTotales; }
 
 private:
     bool _cargarCA();
@@ -115,6 +119,7 @@ private:
     // rechaza la credencial no se martillea con un handshake TLS cada 5 s.
     core::Backoff _reintento{5000, 60000, 2};
     uint32_t _acksIgnorados = 0;
+    uint32_t _fallosTotales = 0;
     core::OrdenOTA _ordenOta;
     bool _hayOrdenOta = false;
     std::string _rechazoOta;
