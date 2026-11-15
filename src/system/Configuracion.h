@@ -21,6 +21,8 @@
  *                                                  system/CertificadoCliente.h)
  *   boot_id                                      — contador de arranques
  *   perdidas                                     — contador persistente (blob)
+ *   reconexion                                   — episodio de reconexión (blob, HU-08,
+ *                                                  system/DiagnosticoReconexion.h)
  */
 struct ConfiguracionNodo {
     String deviceId;

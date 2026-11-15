@@ -33,11 +33,13 @@
 #include "core/Backoff.h"
 #include "core/Consola.h"
 #include "core/Credenciales.h"
+#include "core/EstadoNodo.h"
 #include "core/Json.h"
 #include "core/LlenadoBanco.h"
 #include "core/Payload.h"
 #include "core/Pem.h"
 #include "core/Posesion.h"
+#include "core/Reconexion.h"
 #include "core/Registro.h"
 #include "core/Tiempo.h"
 #include "network/MQTTManager.h"
@@ -46,10 +48,12 @@
 #include "sensors/DS18B20Sensor.h"
 #include "sensors/MC38Sensor.h"
 #include "sensors/SHT31Sensor.h"
+#include "storage/BitacoraPuertaLittleFS.h"
 #include "storage/BufferLittleFS.h"
 #include "system/ActualizacionOTA.h"
 #include "system/CertificadoCliente.h"
 #include "system/Configuracion.h"
+#include "system/DiagnosticoReconexion.h"
 #include "system/Eventos.h"
 #include "system/Reloj.h"
 #include "system/Watchdog.h"
@@ -67,6 +71,7 @@ static SHT31Sensor sht31(SHT31_DIRECCION, PIN_I2C_SDA, PIN_I2C_SCL);
 static MC38Sensor mc38(PIN_MC38);
 #endif
 static BufferLittleFS buffer;
+static BitacoraPuertaLittleFS bitacoraPuerta;  // HU-04: cambios de puerta hasta su PUBACK
 static WiFiClientSecure tls;
 static WiFiManager wifi;
 static MQTTManager mqtt(tls);
@@ -308,6 +313,31 @@ static void reportarDrenajeBanco(int confirmados) {
 }
 #endif
 
+#if MC38_INSTALADO
+/// HU-04: el cambio se guarda en LittleFS antes de publicarse; sobrevive a un
+/// reinicio y a una desconexión larga (core/BitacoraPuerta.h). Sin LittleFS,
+/// la cola en RAM de siempre.
+static void anotarCambioPuerta(bool abierta) {
+    if (bitacoraPuerta.disponible()) {
+        switch (bitacoraPuerta.anotar(abierta, g_bootId, uptimeSegundos(), epochAhora())) {
+            case core::ResultadoAnotacion::Guardado:
+                return;
+            case core::ResultadoAnotacion::Descartado:
+                LOG_E("Puerta", "Bitacora llena (%u eventos sin publicar): cambio descartado y contado "
+                                "(total %lu).", (unsigned)CAPACIDAD_EVENTOS_PUERTA,
+                      (unsigned long)bitacoraPuerta.descartados());
+                return;
+            case core::ResultadoAnotacion::SinPersistir:
+                LOG_E("Puerta", "No se pudo escribir la bitacora: el cambio queda en RAM hasta publicarse.");
+                return;
+        }
+    }
+    core::ObjetoJSON d;
+    d.booleano("door_open", abierta);
+    encolarEvento("puerta", d.cerrar());
+}
+#endif
+
 static void taskCaptura(void*) {
     suscribirTareaAlWatchdog("Captura");
     TickType_t ultimo = xTaskGetTickCount();
@@ -337,11 +367,7 @@ static void taskCaptura(void*) {
             // HU-04 esc. 1: cada cambio estable de la puerta queda registrado
             // con su propio timestamp (evento "puerta"), además del resumen
             // por ventana que viaja en la telemetría.
-            if (mc38.poll()) {
-                core::ObjetoJSON d;
-                d.booleano("door_open", mc38.abierta());
-                encolarEvento("puerta", d.cerrar());
-            }
+            if (mc38.poll()) anotarCambioPuerta(mc38.abierta());
 #endif
 #if MODO_DEMO
             revisarBotonDemo();
@@ -364,12 +390,21 @@ static void imprimirEstado() {
     Serial.printf("device_id=%s boot_id=%lu seq_no=%lu uptime=%lus intervalo=%lus\n",
                   g_config.deviceId.c_str(), (unsigned long)g_bootId, (unsigned long)g_seqNo,
                   (unsigned long)uptimeSegundos(), (unsigned long)g_config.intervaloMuestreoS);
+    const core::EpisodioReconexion& ep = diagnosticoReconexion().episodio();
     Serial.printf("wifi=%s rssi=%d dBm intentos_fallidos=%lu retardo=%lums diag=%d | mqtt=%s ca=%d aprov=%d "
                   "cert_cliente=%d\n",
                   wifi.conectado() ? "OK" : "NO", wifi.rssi(), (unsigned long)wifi.intentosFallidos(),
-                  (unsigned long)wifi.retardoActualMs(), wifi.diagnosticoActivo() ? 1 : 0,
+                  (unsigned long)wifi.retardoActualMs(), (ep.activo && ep.diagnostico) ? 1 : 0,
                   mqtt.conectado() ? "OK" : "NO", mqtt.caCargada() ? 1 : 0, mqtt.aprovisionado() ? 1 : 0,
                   mqtt.certificadoCliente() ? 1 : 0);
+    // HU-08 esc. 3: episodio de reconexión persistente (en curso o el último).
+    Serial.printf("reconexion: %s intentos=%lu etapa=%s reinicios=%lu desde=boot %lu +%lus\n",
+                  ep.activo ? "EN_CURSO" : "cerrada", (unsigned long)ep.intentos,
+                  core::nombreEtapaReconexion(ep.etapa) ? core::nombreEtapaReconexion(ep.etapa) : "-",
+                  (unsigned long)ep.reinicios, (unsigned long)ep.desde.bootId, (unsigned long)ep.desde.uptimeS);
+    Serial.printf("puerta: pendientes=%lu descartados=%lu | sht31 recuperaciones=%lu\n",
+                  (unsigned long)bitacoraPuerta.pendientes(), (unsigned long)bitacoraPuerta.descartados(),
+                  (unsigned long)sht31.recuperaciones());
     Serial.printf("flash_cifrada=%d arranque_seguro=%d\n", esp_flash_encryption_enabled() ? 1 : 0,
                   esp_secure_boot_enabled() ? 1 : 0);
     Serial.printf("reloj=%s | buffer: pendientes=%lu/%lu ocupacion=%u%% libres=%luKB cuarentena=%lu\n",
@@ -729,32 +764,77 @@ static void revisarAvisosBuffer() {
     }
 }
 
-/// HU-48: latido cada 5 min con el estado del buffer (datos pendientes,
-/// pérdidas) y del enlace, para que el dashboard muestre la completitud del
-/// registro. También sirve de evidencia de RSSI para el protocolo C-5.
+/// HU-48: latido cada 5 min con el estado del buffer (datos pendientes y su
+/// rango, pérdidas) y del enlace, para que el dashboard muestre la completitud
+/// del registro. También sirve de evidencia de RSSI para el protocolo C-5.
+/// Los campos se arman en core::detalleEstadoNodo (probado en el host).
 static void publicarEstadoNodo(uint32_t pubacksSinAck, uint32_t acksHuellaAjena) {
-    core::EstadoPerdidas p = buffer.perdidas();
-    core::ObjetoJSON d;
-    d.sinSigno("pendientes", buffer.pendientes());
-    d.sinSigno("ocupacion_pct", buffer.ocupacionPct());
-    d.sinSigno("capacidad", buffer.capacidad());
-    // B medido en el nodo: tamaño útil de LittleFS y lo que queda libre.
-    d.sinSigno("fs_total_bytes", (uint32_t)buffer.bytesTotales());
-    d.sinSigno("fs_libres_bytes", (uint32_t)buffer.bytesLibres());
-    d.sinSigno("perdidas_total", p.total);
-    d.sinSigno("cuarentena", buffer.cuarentenados());
-    d.sinSigno("cuarentena_desbordada", buffer.cuarentenaDesbordada());
-    d.sinSigno("ultimo_seq_no", g_seqNo);
-    d.entero("rssi_dbm", wifi.rssi());
-    d.sinSigno("heap_libre", ESP.getFreeHeap());
-    d.sinSigno("heap_minimo", ESP.getMinFreeHeap());
-    d.sinSigno("intervalo_s", g_config.intervaloMuestreoS);
-    d.sinSigno("pubacks_sin_ack", pubacksSinAck);
-    d.sinSigno("acks_huella_ajena", acksHuellaAjena);  // IOT-008
-    d.sinSigno("eventos_descartados", eventosDescartados());
-    d.booleano("reloj_sntp", relojSincronizado());
-    d.sinSigno("saltos_reloj_rechazados", saltosRelojRechazados());  // IOT-007
-    publicarEventoDirecto("estado_nodo", d.cerrar());
+    const core::EstadoPerdidas p = buffer.perdidas();
+    core::DatosEstadoNodo d;
+    d.pendientes = buffer.pendientes();
+    d.ocupacionPct = buffer.ocupacionPct();
+    d.capacidad = buffer.capacidad();
+    d.fsTotalBytes = (uint32_t)buffer.bytesTotales();
+    d.fsLibresBytes = (uint32_t)buffer.bytesLibres();
+    d.perdidasTotal = p.total;
+    d.cuarentena = buffer.cuarentenados();
+    d.cuarentenaDesbordada = buffer.cuarentenaDesbordada();
+    d.ultimoSeqNo = g_seqNo;
+    d.rssiDbm = wifi.rssi();
+    d.heapLibre = ESP.getFreeHeap();
+    d.heapMinimo = ESP.getMinFreeHeap();
+    d.intervaloS = g_config.intervaloMuestreoS;
+    d.pubacksSinAck = pubacksSinAck;
+    d.acksHuellaAjena = acksHuellaAjena;  // IOT-008
+    d.eventosDescartados = eventosDescartados();
+    d.relojSntp = relojSincronizado();
+    d.saltosRelojRechazados = saltosRelojRechazados();  // IOT-007
+    // HU-48 esc. 1: rango real de los pendientes (deja de ser estimado).
+    buffer.extremosPendientes(d.primerPendiente, d.hayPrimerPendiente, d.ultimoPendiente, d.hayUltimoPendiente);
+    d.reconexion = diagnosticoReconexion().episodio();  // HU-08 esc. 3
+    d.puertaPendientes = bitacoraPuerta.pendientes();    // HU-04
+    d.puertaDescartados = bitacoraPuerta.descartados();
+    d.sht31Recuperaciones = sht31.recuperaciones();      // HU-02
+    publicarEventoDirecto("estado_nodo", core::detalleEstadoNodo(d, baseTiempo()));
+}
+
+/// HU-04: publica los cambios de puerta guardados, el más antiguo primero.
+/// Cada evento lleva el arranque y el uptime en que ocurrió, así que
+/// `occurred_at` es la hora del cambio (null si ese arranque no tuvo SNTP).
+/// Solo el PUBACK lo retira de la bitácora.
+static void publicarEventosPuerta() {
+    core::EventoPuerta e;
+    int publicados = 0;
+    while (publicados < 5 && bitacoraPuerta.primero(e)) {
+        const std::string json =
+            core::serializarEvento(std::string(g_config.deviceId.c_str()), e.bootId, "puerta", e.epoch, e.uptimeS,
+                                   baseTiempo(), core::detalleEventoPuerta(e));
+        alimentarWatchdog();
+        if (mqtt.publicar(mqtt.topicoEventos(), json) != MQTTManager::Publicacion::Confirmada) return;
+        bitacoraPuerta.confirmar(e.id);
+        publicados++;
+    }
+}
+
+/// HU-13 esc. 2: DISCONNECT voluntario precedido de su motivo. El DISCONNECT
+/// no dispara el LWT, así que sin este evento la salida no quedaba explicada.
+static void desconectarConAviso(const char* motivo) {
+#if PUBLICAR_DESCONEXION_ORDENADA
+    if (mqtt.conectado()) publicarEventoDirecto("desconexion_ordenada", core::detalleDesconexionOrdenada(motivo));
+#else
+    (void)motivo;
+#endif
+    mqtt.desconectarOrdenadamente();
+}
+
+/// HU-08 esc. 3: un intento de reconexión falló (Wi-Fi o broker).
+static void anotarFalloReconexion(core::EtapaReconexion etapa) {
+    core::SeguimientoReconexion& diag = diagnosticoReconexion();
+    if (diag.registrarFallo(etapa, marcaAhora(g_bootId))) {
+        LOG_E("Red", "DIAGNOSTICO: %lu intentos de reconexion fallidos (ultimo: %s). AP ausente, credenciales "
+                     "invalidas o broker inalcanzable. La captura offline continua.",
+              (unsigned long)diag.episodio().intentos, core::nombreEtapaReconexion(etapa));
+    }
 }
 
 static void publicarEventosPendientes() {
@@ -782,7 +862,7 @@ static void revisarRotacionToken() {
     const String nuevo = releerTokenMqtt();
     if (nuevo == mqtt.token() || nuevo.isEmpty()) return;
     LOG_I("Red", "Token MQTT rotado en NVS: reconexion ordenada sin reiniciar (HU-44).");
-    mqtt.desconectarOrdenadamente();  // DISCONNECT limpio: no dispara el LWT
+    desconectarConAviso("rotacion_credencial");  // DISCONNECT limpio: no dispara el LWT
     mqtt.actualizarToken(nuevo);
     encolarEvento("credencial_rotada", "");
 }
@@ -831,7 +911,7 @@ static void sondearRelevo() {
     if (relevo.isEmpty() || relevo == mqtt.token()) return;
     LOG_I("Red", "Token de relevo pendiente: reconexion ordenada para probarlo (HU-44).");
     g_relevoRechazado = false;
-    mqtt.desconectarOrdenadamente();  // DISCONNECT limpio: no dispara el LWT
+    desconectarConAviso("prueba_relevo");  // DISCONNECT limpio: no dispara el LWT
 }
 
 /// Tras conectar: si conectó con el relevo, pasa a ser el token vigente en NVS.
@@ -872,7 +952,7 @@ static void verificarArranqueOTA() {
         }
         case core::DecisionArranque::Revertir:
             LOG_E("OTA", "La imagen nueva no capturo y conecto a tiempo: se revierte a la anterior.");
-            if (mqtt.conectado()) mqtt.desconectarOrdenadamente();
+            desconectarConAviso("ota_revertida");
             revertirImagen();  // no vuelve
             break;
         default:
@@ -980,7 +1060,10 @@ static void taskRed(void*) {
 
         // HU-08: backoff exponencial 1 s → 60 s; la captura sigue en la
         // otra tarea aunque la red no vuelva nunca.
+        const uint32_t fallosWifi = wifi.fallosTotales();
         if (!wifi.mantener()) {
+            if (sesionAnunciada) diagnosticoReconexion().marcarDesconexion(marcaAhora(g_bootId));
+            if (wifi.fallosTotales() != fallosWifi) anotarFalloReconexion(core::EtapaReconexion::WiFi);
             sesionAnunciada = false;
             delay(200);
             continue;
@@ -1000,11 +1083,14 @@ static void taskRed(void*) {
         // HU-09: canal MQTT sobre TLS con la CA validada. Sin CA o sin
         // credenciales, fallo cerrado: no hay alternativa en texto plano.
         if (!mqtt.conectado()) {
+            if (sesionAnunciada) diagnosticoReconexion().marcarDesconexion(marcaAhora(g_bootId));
             sesionAnunciada = false;
             prepararTokenConexion();
+            const uint32_t fallosBroker = mqtt.fallosTotales();
             const bool ok = mqtt.conectar();
             alimentarWatchdog();  // handshake TLS + CONNACK: el tramo más largo
             if (!ok) {
+                if (mqtt.fallosTotales() != fallosBroker) anotarFalloReconexion(core::EtapaReconexion::Broker);
                 // HU-44: rechazo por credencial con relevo cargado → se
                 // reintenta enseguida con el otro token; si no, la espera normal.
                 if (!tratarRechazoConexion(mqtt.ultimoCodigoRetorno())) delay(500);
@@ -1012,6 +1098,14 @@ static void taskRed(void*) {
             }
             consolidarTokenRelevo();
             g_conectoBroker = true;  // IOT-004: autodiagnóstico
+            // HU-08 esc. 3: la sesión volvió; el episodio se cierra y, si llegó
+            // al umbral o el nodo reinició en medio, se reporta.
+            core::EpisodioReconexion cerrado;
+            if (diagnosticoReconexion().registrarConexion(marcaAhora(g_bootId), cerrado)) {
+                encolarEvento("wifi_reconexion_prolongada",
+                              core::detalleReconexionProlongada(cerrado, diagnosticoReconexion().umbral(),
+                                                                baseTiempo()));
+            }
         }
         if (!sesionAnunciada) {
             // HU-13 esc. 3: el nodo anuncia que volvió a estar en línea.
@@ -1020,16 +1114,6 @@ static void taskRed(void*) {
             d.sinSigno("pendientes", buffer.pendientes());
             d.cadena("firmware_version", core::textoVersionFirmware(FW_MAYOR, FW_MENOR, FW_PARCHE));
             publicarEventoDirecto("online", d.cerrar());
-            // HU-08 esc. 3: el episodio de diagnóstico solo puede reportarse
-            // ahora, con la red de vuelta.
-            WiFiManager::Recuperacion rec;
-            if (wifi.consumirRecuperacion(rec)) {
-                core::ObjetoJSON dr;
-                dr.sinSigno("intentos_fallidos", rec.intentos);
-                dr.sinSigno("duracion_s", rec.duracionS);
-                dr.sinSigno("umbral_intentos", WIFI_UMBRAL_DIAGNOSTICO_INTENTOS);
-                encolarEvento("wifi_reconexion_prolongada", dr.cerrar());
-            }
             backoffDrenaje.registrarExito();
             drenajeEnEspera = false;
             sesionAnunciada = true;
@@ -1039,6 +1123,7 @@ static void taskRed(void*) {
         atenderDesafioPosesion();
 
         publicarEventosPendientes();
+        publicarEventosPuerta();  // HU-04: los cambios guardados en LittleFS
 
         // HU-07: drenaje FIFO con acuse lógico. Si el backend no acusa, se
         // espera con backoff para no republicar en ráfaga.
@@ -1107,6 +1192,9 @@ void setup() {
     g_config = cargarConfiguracion();
     g_bootId = cargarEIncrementarBootId();
     iniciarReloj(g_bootId);
+    // HU-08 esc. 3: un episodio de reconexión abierto antes del reinicio sigue
+    // (y cuenta este reinicio).
+    diagnosticoReconexion().montar(g_bootId);
 
     // Línea fija de arranque: la usa analizar_ensayo.py para contar reinicios.
     Serial.printf("[BOOT] boot_id=%lu reset=%s fw=v%d.%d.%d device=%s intervalo_s=%lu mc38=%d "
@@ -1122,6 +1210,7 @@ void setup() {
     } else if (formateado) {
         LOG_E("Setup", "LittleFS no montaba y se formateo: buffer vacio.");
     }
+    bitacoraPuerta.begin();  // HU-04: después de montar LittleFS
 
     // IOT-009: sin Flash Encryption las lecturas pendientes pueden leerse y
     // alterarse con acceso físico (su CRC32 solo detecta errores accidentales).
