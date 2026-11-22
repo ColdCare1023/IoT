@@ -282,6 +282,10 @@ bool ColaLecturas::confirmarCabeza() {
     return _persistirCursor();
 }
 
+bool ColaLecturas::cuarentenaLlena() {
+    return _almacen.tamanoCuarentena() / TAM_ENTRADA_CUARENTENA >= _config.maxRegistrosCuarentena;
+}
+
 bool ColaLecturas::cuarentenarCabeza(MotivoCuarentena motivo, const uint8_t bruto[TAM_REGISTRO]) {
     if (_segmentos.empty() || _cursorIndice >= _segmentos[0].registros) return false;
 
@@ -440,6 +444,11 @@ ResumenDrenaje drenar(ColaLecturas& cola, Transmisor& transmisor, int maxPorCicl
                 r.confirmados++;
                 break;
             case ResultadoEnvio::Rechazado:
+                if (cola.cuarentenaLlena()) {
+                    r.cuarentenaLlena = true;
+                    r.detenido = true;
+                    return r;
+                }
                 cola.cuarentenarCabeza(MotivoCuarentena::RechazadoBackend, bruto);
                 r.rechazados++;
                 break;

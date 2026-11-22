@@ -743,6 +743,7 @@ static void publicarEstadoNodo(uint32_t pubacksSinAck, uint32_t acksHuellaAjena)
     d.sinSigno("fs_libres_bytes", (uint32_t)buffer.bytesLibres());
     d.sinSigno("perdidas_total", p.total);
     d.sinSigno("cuarentena", buffer.cuarentenados());
+    d.sinSigno("cuarentena_desbordada", buffer.cuarentenaDesbordada());
     d.sinSigno("ultimo_seq_no", g_seqNo);
     d.entero("rssi_dbm", wifi.rssi());
     d.sinSigno("heap_libre", ESP.getFreeHeap());
@@ -1060,8 +1061,22 @@ static void taskRed(void*) {
                 d.sinSigno("rechazados_backend", (uint32_t)r.rechazados);
                 d.sinSigno("invalidos", (uint32_t)r.invalidos);
                 d.sinSigno("cuarentena_total", buffer.cuarentenados());
+                d.sinSigno("cuarentena_desbordada", buffer.cuarentenaDesbordada());
                 encolarEvento("registros_en_cuarentena", d.cerrar());
             }
+            // Cuarentena llena con el backend rechazando: el drenaje queda
+            // retenido. Se avisa una vez por episodio, no en cada reintento.
+            static bool avisadaCuarentenaLlena = false;
+            if (r.cuarentenaLlena && !avisadaCuarentenaLlena) {
+                core::ObjetoJSON d;
+                d.sinSigno("cuarentena_total", buffer.cuarentenados());
+                d.sinSigno("cuarentena_desbordada", buffer.cuarentenaDesbordada());
+                d.sinSigno("pendientes", buffer.pendientes());
+                d.booleano("drenaje_retenido", true);
+                encolarEvento("registros_en_cuarentena", d.cerrar());
+                LOG_E("Red", "Cuarentena llena y el backend rechaza: drenaje retenido, nada se descarta.");
+            }
+            avisadaCuarentenaLlena = r.cuarentenaLlena;
             if (r.confirmados > 0) {
                 LOG_I("Red", "%d lectura(s) con acuse logico; quedan %lu.", r.confirmados,
                       (unsigned long)buffer.pendientes());

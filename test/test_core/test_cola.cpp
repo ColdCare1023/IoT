@@ -349,6 +349,36 @@ void test_rechazado_por_backend_va_a_cuarentena(void) {
     TEST_ASSERT_EQUAL_UINT32(2, copia.seqNo);  // copia íntegra del registro rechazado
 }
 
+/// Con la cuarentena llena, un rechazo del backend no se descarta: el drenaje
+/// se detiene con el registro en cabeza y se reanuda cuando el backend vuelve
+/// a aceptar. Un rechazo en serie no puede vaciar el backlog.
+void test_rechazo_con_cuarentena_llena_detiene_el_drenaje_sin_perder(void) {
+    AlmacenMemoria a;
+    PerdidasMemoria p;
+    core::ConfigCola c = config(10, 10);
+    c.maxRegistrosCuarentena = 2;
+    core::ColaLecturas cola(a, p, c);
+    cola.montar();
+    guardarN(cola, 1, 5);
+
+    TransmisorGuion tx;
+    tx.porDefecto = ResultadoEnvio::Rechazado;
+    const core::ResumenDrenaje r = core::drenar(cola, tx, 100);
+    TEST_ASSERT_EQUAL_INT(2, r.rechazados);
+    TEST_ASSERT_TRUE(r.detenido);
+    TEST_ASSERT_TRUE(r.cuarentenaLlena);
+    TEST_ASSERT_EQUAL_UINT32(3, cola.pendientes());
+    TEST_ASSERT_EQUAL_UINT32(88, (uint32_t)a.cuarentena.size());
+    TEST_ASSERT_EQUAL_UINT32(0, cola.cuarentenaDesbordada());
+
+    tx.porDefecto = ResultadoEnvio::Confirmado;
+    const core::ResumenDrenaje r2 = core::drenar(cola, tx, 100);
+    TEST_ASSERT_EQUAL_INT(3, r2.confirmados);
+    TEST_ASSERT_FALSE(r2.cuarentenaLlena);
+    TEST_ASSERT_EQUAL_UINT32(0, cola.pendientes());
+    TEST_ASSERT_EQUAL_UINT32(3, tx.enviados[3]);  // se reanudó desde el retenido
+}
+
 /// Sin cursor fiable se reenvía todo: duplicar es inofensivo (idempotencia
 /// HU-11 en el backend), perder no.
 void test_cursor_perdido_reenvia_desde_el_inicio(void) {
@@ -563,6 +593,7 @@ void run_tests_cola(void) {
     RUN_TEST(test_corte_a_mitad_de_escritura);
     RUN_TEST(test_registro_corrupto_va_a_cuarentena_sin_bloquear);
     RUN_TEST(test_rechazado_por_backend_va_a_cuarentena);
+    RUN_TEST(test_rechazo_con_cuarentena_llena_detiene_el_drenaje_sin_perder);
     RUN_TEST(test_cursor_perdido_reenvia_desde_el_inicio);
     RUN_TEST(test_corte_entre_borrado_y_cursor);
     RUN_TEST(test_sin_margen_en_el_sistema_de_archivos_es_saturacion);

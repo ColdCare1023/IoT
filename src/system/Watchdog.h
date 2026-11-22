@@ -7,8 +7,11 @@
  * Task Watchdog (TWDT) sobre las dos tareas que importan: captura y red.
  *
  * Plazo = 2 × el mayor tramo que NO puede alimentar el watchdog. Ese tramo es
- * `mqtt.connect()`: handshake TLS + espera del CONNACK dentro de una sola
- * llamada del SDK (10 s + 5 s). Todo lo demás alimenta el watchdog en su
+ * `mqtt.connect()`: conexión TCP + handshake TLS + espera del CONNACK dentro de
+ * una sola llamada del SDK (5 s + 10 s + 5 s). La conexión TCP faltaba en la
+ * cuenta y valía 30 s por defecto: con un broker inalcanzable, connect()
+ * consumía el plazo entero y el nodo se reiniciaba en bucle (TASK_WDT).
+ * Todo lo demás alimenta el watchdog en su
  * bucle: asociación Wi-Fi (cada 500 ms), conversión DS18B20 (cada 10 ms),
  * espera del acuse lógico (cada 10 ms) y la ventana de muestreo (cada 50 ms).
  * SNTP es asíncrono (callback), así que ya no bloquea.
@@ -17,7 +20,8 @@
  * evento `arranque` y en la línea [BOOT] del monitor serie (ensayo doméstico).
  */
 
-static const unsigned int PEOR_BLOQUEO_NO_ALIMENTABLE_MS = TLS_HANDSHAKE_TIMEOUT_MS + MQTT_COMMAND_TIMEOUT_MS;
+static const unsigned int PEOR_BLOQUEO_NO_ALIMENTABLE_MS =
+    TCP_CONNECT_TIMEOUT_MS + TLS_HANDSHAKE_TIMEOUT_MS + MQTT_COMMAND_TIMEOUT_MS;
 static const unsigned int WATCHDOG_TIMEOUT_S = (2 * PEOR_BLOQUEO_NO_ALIMENTABLE_MS + 999) / 1000;
 
 // Si el watchdog superara el keep-alive, EMQX publicaría el LWT antes de que
@@ -26,6 +30,10 @@ static_assert(WATCHDOG_TIMEOUT_S <= MQTT_KEEPALIVE_S,
               "El plazo del watchdog supera el keep-alive MQTT: revisar timeouts en config.h");
 static_assert(ACK_LOGICO_TIMEOUT_MS < WATCHDOG_TIMEOUT_S * 1000u,
               "La espera del acuse logico debe caber en el plazo del watchdog");
+// El framework usa 30 s si no se fija: un valor de ese orden vuelve a dejar a
+// connect() sin margen frente al watchdog.
+static_assert(TCP_CONNECT_TIMEOUT_MS > 0 && TCP_CONNECT_TIMEOUT_MS <= 10000,
+              "TCP_CONNECT_TIMEOUT_MS debe ser explicito y corto (<= 10 s)");
 
 void inicializarWatchdog();
 void suscribirTareaAlWatchdog(const char* nombreTarea);

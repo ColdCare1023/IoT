@@ -89,7 +89,11 @@ Cada decisión indica el requisito que la motiva y lo que se sacrifica.
 - Captura (prioridad 3) y red (2) en el núcleo 1; la pila Wi-Fi queda en el 0. La captura preempta el
   handshake TLS y **nunca** espera a la red: el mutex del buffer solo se toma por operación de cola y se
   suelta durante el PUBACK + acuse (verificado por `test_el_cerrojo_no_se_sostiene_durante_el_envio`).
-- Watchdog = 2 × (TLS 10 s + CONNACK 5 s) = 30 s ≤ keep-alive 60 s (`static_assert`).
+- Watchdog = 2 × (TCP 5 s + TLS 10 s + CONNACK 5 s) = 40 s ≤ keep-alive 60 s (`static_assert`).
+  Hasta el 21/11/2026 la cuenta omitía la conexión TCP: `setTimeout()` del cliente TLS es el de
+  `Stream` (ms) y no la gobierna, así que valía 30 s por defecto. Con un `mqtt_host` inalcanzable
+  (la laptop cambió de IP) `connect()` bloqueaba los 30 s del watchdog y el nodo se reiniciaba en
+  bucle (`reset=TASK_WDT` cada ~40 s), con la consola casi muda. Ahora `setConnectionTimeout(5 s)`.
 
 ## ADR-10 · El puerto y el esquema MQTT no son configurables (HU-14)
 

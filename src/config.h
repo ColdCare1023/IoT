@@ -17,7 +17,7 @@
 #endif
 #define FW_MAYOR  1
 #define FW_MENOR  2
-#define FW_PARCHE 0
+#define FW_PARCHE 1
 
 // =========================================================================
 // Credenciales — vacías a propósito (RNF-05). Precedencia: NVS > build_flags.
@@ -97,6 +97,10 @@
 #define MQTT_KEEPALIVE_S          60
 #define MQTT_COMMAND_TIMEOUT_MS   5000   // espera de CONNACK / PUBACK / SUBACK
 #define TLS_HANDSHAKE_TIMEOUT_MS  10000
+// Conexión TCP al broker (antes del handshake). Sin fijarlo, el cliente TLS usa
+// 30 s: con un mqtt_host que no responde (IP vieja en la LAN) connect() bloqueaba
+// el plazo entero del watchdog y el nodo entraba en bucle de reinicios TASK_WDT.
+#define TCP_CONNECT_TIMEOUT_MS    5000
 #define ACK_LOGICO_TIMEOUT_MS     8000   // espera del acuse del backend tras el PUBACK
 #define CERT_CA_ARCHIVO           "/certs/root_ca.pem"
 #define MQTT_BUFFER_BYTES         1024

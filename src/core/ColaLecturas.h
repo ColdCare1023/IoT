@@ -149,10 +149,14 @@ public:
     /// segmento quedó completo y consumido, lo borra.
     bool confirmarCabeza();
 
-    /// Copia la cabeza a cuarentena con su motivo y avanza. Nunca borra un
-    /// registro sin dejar copia (salvo que la cuarentena esté llena, lo que
-    /// se cuenta y se reporta).
+    /// Copia la cabeza a cuarentena con su motivo y avanza. Con la cuarentena
+    /// llena el registro se descarta y se cuenta en `cuarentenaDesbordada()`;
+    /// `drenar()` no llega aquí con un rechazo del backend en ese caso (se
+    /// detiene), así que solo se descartan registros corruptos o inválidos.
     bool cuarentenarCabeza(MotivoCuarentena motivo, const uint8_t bruto[TAM_REGISTRO]);
+
+    /// true si la cuarentena ya no admite más entradas.
+    bool cuarentenaLlena();
 
     /// ADR-18 (solo banco, `buffer descartar`). Sella el último segmento para
     /// que lo que se guarde después vaya a uno nuevo y quede fuera del
@@ -257,6 +261,9 @@ struct ResumenDrenaje {
     int invalidos = 0;
     int corruptos = 0;
     bool detenido = false;
+    /// El backend rechazó la cabeza y la cuarentena está llena: el registro
+    /// se retiene en vez de descartarse (implica `detenido`).
+    bool cuarentenaLlena = false;
 };
 
 /**
@@ -266,7 +273,9 @@ struct ResumenDrenaje {
  *      reanuda desde el primer registro sin acuse (HU-07 esc. 2); si ya se
  *      había publicado, el backend lo deduplica (HU-11).
  *   3. Corrupto/Rechazado/Inválido → cuarentena y se sigue: uno malo no
- *      bloquea a los válidos que vienen detrás.
+ *      bloquea a los válidos que vienen detrás. Excepción: un rechazo del
+ *      backend con la cuarentena llena detiene el drenaje sin avanzar, para
+ *      que un rechazo en serie no borre el backlog.
  *   4. Como mucho `maxPorCiclo` envíos, para ceder CPU y alimentar el watchdog.
  */
 ResumenDrenaje drenar(ColaLecturas& cola, Transmisor& transmisor, int maxPorCiclo,
