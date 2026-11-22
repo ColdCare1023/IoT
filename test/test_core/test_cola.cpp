@@ -579,6 +579,81 @@ void test_guardar_lote_con_la_cola_llena_guarda_lo_que_cabe(void) {
     TEST_ASSERT_EQUAL_UINT32(10, cola.pendientes());
 }
 
+// ── HU-48: extremos de los pendientes (para pendientes_desde/hasta) ──────
+
+void test_extremos_de_los_pendientes_entre_segmentos(void) {
+    AlmacenMemoria a;
+    PerdidasMemoria p;
+    core::ColaLecturas cola(a, p, config(3, 10));
+    cola.montar();
+    core::RegistroLectura primero, ultimo;
+    bool hayP = true, hayU = true;
+    cola.extremosPendientes(primero, hayP, ultimo, hayU);
+    TEST_ASSERT_FALSE(hayP);  // cola vacía
+    TEST_ASSERT_FALSE(hayU);
+
+    guardarN(cola, 1, 7);
+    cola.extremosPendientes(primero, hayP, ultimo, hayU);
+    TEST_ASSERT_TRUE(hayP && hayU);
+    TEST_ASSERT_EQUAL_UINT32(1, primero.seqNo);
+    TEST_ASSERT_EQUAL_UINT32(7, ultimo.seqNo);
+    TEST_ASSERT_EQUAL_UINT32(lectura(1).capturadoEpoch, primero.capturadoEpoch);
+
+    // Tras acusar 4 (el primer segmento entero y uno del segundo) el más
+    // antiguo es el 5; leer los extremos no consume nada.
+    TransmisorGuion tx;
+    tx.guion = {ResultadoEnvio::Confirmado, ResultadoEnvio::Confirmado, ResultadoEnvio::Confirmado,
+                ResultadoEnvio::Confirmado, ResultadoEnvio::SinConexion};
+    core::drenar(cola, tx, 100);
+    cola.extremosPendientes(primero, hayP, ultimo, hayU);
+    TEST_ASSERT_EQUAL_UINT32(5, primero.seqNo);
+    TEST_ASSERT_EQUAL_UINT32(7, ultimo.seqNo);
+    TEST_ASSERT_EQUAL_UINT32(3, cola.pendientes());
+
+    // Tras reiniciar, los mismos extremos.
+    core::ColaLecturas tras(a, p, config(3, 10));
+    tras.montar();
+    tras.extremosPendientes(primero, hayP, ultimo, hayU);
+    TEST_ASSERT_EQUAL_UINT32(5, primero.seqNo);
+    TEST_ASSERT_EQUAL_UINT32(7, ultimo.seqNo);
+}
+
+/// Con la cabeza abierta y ya acusada entera (sin normalizar), el siguiente
+/// guardado va al mismo segmento: el más antiguo es ese, no uno ya acusado.
+void test_extremos_con_la_cabeza_acusada_y_abierta(void) {
+    AlmacenMemoria a;
+    PerdidasMemoria p;
+    core::ColaLecturas cola(a, p, config(10, 10));
+    cola.montar();
+    guardarN(cola, 1, 3);
+    TransmisorGuion tx;
+    core::drenar(cola, tx, 100);
+    core::RegistroLectura primero, ultimo;
+    bool hayP = true, hayU = true;
+    cola.extremosPendientes(primero, hayP, ultimo, hayU);
+    TEST_ASSERT_FALSE(hayP);
+    guardarN(cola, 4, 4);
+    cola.extremosPendientes(primero, hayP, ultimo, hayU);
+    TEST_ASSERT_TRUE(hayP && hayU);
+    TEST_ASSERT_EQUAL_UINT32(4, primero.seqNo);
+    TEST_ASSERT_EQUAL_UINT32(4, ultimo.seqNo);
+}
+
+void test_extremo_corrupto_se_informa_como_ausente(void) {
+    AlmacenMemoria a;
+    PerdidasMemoria p;
+    core::ColaLecturas cola(a, p, config(3, 10));
+    cola.montar();
+    guardarN(cola, 1, 5);
+    a.segmentos.begin()->second[5] ^= 0xFF;  // registro 1, dentro del CRC
+    core::RegistroLectura primero, ultimo;
+    bool hayP = true, hayU = false;
+    cola.extremosPendientes(primero, hayP, ultimo, hayU);
+    TEST_ASSERT_FALSE(hayP);
+    TEST_ASSERT_TRUE(hayU);
+    TEST_ASSERT_EQUAL_UINT32(5, ultimo.seqNo);
+}
+
 void run_tests_cola(void) {
     RUN_TEST(test_guardar_lote_escribe_una_vez_por_segmento_y_equivale_a_guardar);
     RUN_TEST(test_guardar_lote_con_la_cola_llena_guarda_lo_que_cabe);
@@ -600,4 +675,7 @@ void run_tests_cola(void) {
     RUN_TEST(test_perdidas_sobreviven_al_reinicio);
     RUN_TEST(test_descartar_por_tandas_respeta_lo_guardado_despues);
     RUN_TEST(test_descartar_con_la_cola_vacia_no_hace_nada);
+    RUN_TEST(test_extremos_de_los_pendientes_entre_segmentos);
+    RUN_TEST(test_extremos_con_la_cabeza_acusada_y_abierta);
+    RUN_TEST(test_extremo_corrupto_se_informa_como_ausente);
 }

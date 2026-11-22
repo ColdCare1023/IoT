@@ -51,3 +51,4 @@
 
 ## 5. Pendiente / fuera de alcance de esta evidencia
 - Los eventos `puerta` se publican cuando hay conexión; si el nodo se reinicia sin red antes de publicarlos se pierden (el resumen por ventana sí queda en LittleFS).
+- **Corregido en software en la v1.2.1** (rama `fix/firmware-r2`): los cambios de puerta se guardan en LittleFS (`/tt/puerta.bin`) hasta su PUBACK y se publican con la hora del cambio. Falta repetirlo en hardware: ensayo 4 de [`H1_validacion_en_hardware_pendiente.md`](H1_validacion_en_hardware_pendiente.md).
