@@ -17,7 +17,7 @@
 #endif
 #define FW_MAYOR  1
 #define FW_MENOR  2
-#define FW_PARCHE 1
+#define FW_PARCHE 2
 
 // =========================================================================
 // Credenciales — vacías a propósito (RNF-05). Precedencia: NVS > build_flags.
