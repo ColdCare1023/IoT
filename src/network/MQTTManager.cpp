@@ -63,9 +63,14 @@ void MQTTManager::configurar(const String& host, const String& deviceId, const S
     // degradar. La garantía que depende de nosotros es autenticar al
     // servidor: CA + verificación del nombre (el host viaja en el SNI).
     // H1: cada plazo en la unidad que espera su API (ver core/PlazosConexion.h).
-    // setHandshakeTimeout va en SEGUNDOS; Stream::setTimeout, en MILISEGUNDOS
-    // (con segundos la conexión TCP tenía 10 ms de plazo).
+    // setHandshakeTimeout va en SEGUNDOS; los otros dos, en MILISEGUNDOS.
     _tls.setHandshakeTimeout(core::PLAZO_HANDSHAKE_TLS_S);
+    // Conexión TCP y SO_RCVTIMEO/SO_SNDTIMEO del socket: los gobierna
+    // NetworkClient::_timeout, que solo cambia setConnectionTimeout(). Sin esta
+    // llamada valen 30 s y connect() puede agotar el watchdog (bucle TASK_WDT con
+    // un mqtt_host inalcanzable, verificado en el banco el 21/11/2026).
+    _tls.setConnectionTimeout(core::PLAZO_CLIENTE_TLS_MS);
+    // Stream::setTimeout: plazo de las lecturas "timed" de Stream (otro _timeout).
     _tls.setTimeout(core::PLAZO_CLIENTE_TLS_MS);
     _caCargada = _cargarCA();
     if (!_caCargada) LOG_E("MQTT", "Sin CA valida: NO se conectara (las lecturas siguen en LittleFS).");

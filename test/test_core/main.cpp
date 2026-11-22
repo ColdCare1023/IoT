@@ -23,6 +23,7 @@ void run_tests_ota(void);
 void run_tests_pem(void);
 void run_tests_posesion(void);
 void run_tests_llenado_banco(void);
+void run_tests_tiempo_guardado(void);
 void run_tests_plazos_conexion(void);
 void run_tests_reconexion(void);
 void run_tests_bitacora_puerta(void);
@@ -45,6 +46,7 @@ int main(int, char**) {
     run_tests_pem();
     run_tests_posesion();
     run_tests_llenado_banco();
+    run_tests_tiempo_guardado();
     run_tests_plazos_conexion();
     run_tests_reconexion();
     run_tests_bitacora_puerta();

@@ -184,6 +184,14 @@ void test_mqtt_manager_pasa_cada_plazo_en_su_unidad(void) {
     TEST_ASSERT_TRUE(mqtt);
     TEST_ASSERT_EQUAL_STRING("_tls", handshakes[0].receptor.c_str());
     TEST_ASSERT_EQUAL_STRING("core::PLAZO_HANDSHAKE_TLS_S", handshakes[0].argumento.c_str());
+
+    // El plazo TCP (y SO_RCVTIMEO del socket) es NetworkClient::_timeout: solo lo
+    // cambia setConnectionTimeout(). Sin esta llamada vale 30 s (banco, 21/11/2026).
+    const std::vector<Llamada> conexiones = llamadas(codigo, "setConnectionTimeout");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1, (uint32_t)conexiones.size(),
+                                     "falta _tls.setConnectionTimeout: la conexion TCP queda en 30 s");
+    TEST_ASSERT_EQUAL_STRING("_tls", conexiones[0].receptor.c_str());
+    TEST_ASSERT_EQUAL_STRING("core::PLAZO_CLIENTE_TLS_MS", conexiones[0].argumento.c_str());
 }
 
 /// La propia revisión detecta el defecto original (para que no pase en vacío).

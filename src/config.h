@@ -17,7 +17,7 @@
 #endif
 #define FW_MAYOR  1
 #define FW_MENOR  2
-#define FW_PARCHE 1
+#define FW_PARCHE 3
 
 // =========================================================================
 // Credenciales — vacías a propósito (RNF-05). Precedencia: NVS > build_flags.
@@ -104,6 +104,8 @@
 // Peor espera de lwIP al resolver un host cuyo DNS no responde (H1 del banco):
 // 7 s por servidor (1 + 1 + 2 + 3 s, DNS_MAX_RETRIES = 4) × 3 servidores
 // (CONFIG_LWIP_DNS_MAX_SERVERS). Derivación en core/PlazosConexion.h.
+// El plazo de la conexión TCP es core::PLAZO_CLIENTE_TLS_MS (10 s), aplicado con
+// setConnectionTimeout(): sin él, el cliente TLS usa 30 s por defecto.
 #define DNS_PEOR_BLOQUEO_MS       21000
 #define ACK_LOGICO_TIMEOUT_MS     8000   // espera del acuse del backend tras el PUBACK
 #define CERT_CA_ARCHIVO           "/certs/root_ca.pem"

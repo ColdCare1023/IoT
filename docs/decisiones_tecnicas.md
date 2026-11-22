@@ -92,6 +92,11 @@ Cada decisión indica el requisito que la motiva y lo que se sacrifica.
 - Watchdog = peor `connect()` (DNS 21 s + TCP 10 s + TLS 10 s + una lectura de 10 s + CONNACK 5 s =
   56 s) + 4 s = 60 s ≤ keep-alive 60 s (`static_assert`; cálculo y fuentes en `core/PlazosConexion.h`,
   ver ADR-19). Antes era 2 × (TLS 10 s + CONNACK 5 s) = 30 s y no cubría DNS ni TCP (H1 del banco).
+- Los 10 s de TCP y de cada lectura del socket solo valen si se aplican con
+  `setConnectionTimeout()`: `NetworkClient` tiene su propio `_timeout` (30 s por defecto), distinto
+  del de `Stream` que fija `setTimeout()`. El 21/11/2026, con un `mqtt_host` inalcanzable (la laptop
+  cambió de IP), el nodo se reiniciaba en bucle (`reset=TASK_WDT` cada ~40 s, consola casi muda);
+  con `setConnectionTimeout()` pasó 598 s sin reinicios (v1.2.1). Desde v1.2.3 se fijan los dos.
 
 ## ADR-10 · El puerto y el esquema MQTT no son configurables (HU-14)
 

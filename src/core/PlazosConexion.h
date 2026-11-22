@@ -11,18 +11,22 @@ namespace core {
  * Plazos de la conexión al broker, con la UNIDAD en el nombre (H1 del banco;
  * HU-08 esc. 3, HU-09 esc. 3).
  *
- * El defecto H1 fue un error de unidades: `Stream::setTimeout()` recibía
- * `TLS_HANDSHAKE_TIMEOUT_MS / 1000` (10), así que el `connect()` TCP del core
- * tenía 10 ms de plazo, y el socket, 10 ms para cada lectura y escritura. Con el
- * broker fuera de la red local cada intento fallaba al instante, y el watchdog
- * no cubría el resto del intento (DNS, TLS, CONNACK): el nodo entraba en un
- * bucle de reinicios por TASK_WDT.
+ * El defecto H1: el watchdog no cubría el intento de conexión completo (DNS,
+ * TCP, TLS, CONNACK) y `Stream::setTimeout()` recibía
+ * `TLS_HANDSHAKE_TIMEOUT_MS / 1000` (10 ms). Ese plazo NO era el de la conexión
+ * TCP: el `connect()` TCP del core usaba el `_timeout` propio de `NetworkClient`,
+ * 30 s por defecto. Con un broker inalcanzable el intento superaba el watchdog
+ * y el nodo entraba en un bucle de reinicios por TASK_WDT (banco, 21/11/2026).
  *
  * Firmas verificadas en el paquete fijado en platformio.ini
  * (framework-arduinoespressif32 3.3.12, pioarduino 55.03.312-1):
- *   - `Stream::setTimeout(unsigned long timeout)`: MILISEGUNDOS.
- *     `NetworkClientSecure::connect()` lo pasa a `start_ssl_client()` como plazo
- *     del `connect()` TCP (select) y como SO_RCVTIMEO/SO_SNDTIMEO del socket.
+ *   - `NetworkClient::setConnectionTimeout(uint32_t)`: MILISEGUNDOS. Fija
+ *     `NetworkClient::_timeout` (por defecto 30 000), que
+ *     `NetworkClientSecure::connect()` pasa a `start_ssl_client()` como plazo del
+ *     `connect()` TCP (select) y como SO_RCVTIMEO/SO_SNDTIMEO del socket.
+ *   - `Stream::setTimeout(unsigned long timeout)`: MILISEGUNDOS, pero escribe el
+ *     `_timeout` de `Stream` (lecturas "timed"), que la conexión no usa:
+ *     `NetworkClient` declara otro miembro `_timeout` que lo oculta.
  *   - `NetworkClientSecure::setHandshakeTimeout(unsigned long)`: SEGUNDOS
  *     (guarda `handshake_timeout * 1000`).
  *   - `MQTTClient::setTimeout(int)` (256dpi/MQTT 2.5.3): MILISEGUNDOS

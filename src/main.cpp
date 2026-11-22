@@ -28,6 +28,7 @@
 #include <esp_flash_encrypt.h>
 #include <esp_secure_boot.h>
 #include <esp_system.h>
+#include <esp_timer.h>
 
 #include "config.h"
 #include "core/Backoff.h"
@@ -42,6 +43,7 @@
 #include "core/Reconexion.h"
 #include "core/Registro.h"
 #include "core/Tiempo.h"
+#include "core/TiempoGuardado.h"
 #include "network/MQTTManager.h"
 #include "network/TransmisorMQTT.h"
 #include "network/WiFiManager.h"
@@ -90,6 +92,8 @@ static void publicarEventoDirecto(const char* tipo, const std::string& detalle);
 // IOT-004: autodiagnóstico de una imagen recién instalada por OTA.
 static bool g_imagenAPrueba = false;
 static volatile bool g_capturoLectura = false;
+// BUF-01: captura → guardado en LittleFS. Solo la escribe la tarea de captura.
+static core::TiempoGuardado g_tiempoGuardado;
 static bool g_conectoBroker = false;
 // HU-44 (A-1): la conexión en curso usa el token de relevo (aún no vigente en NVS).
 static bool g_relevoEnPrueba = false;
@@ -204,13 +208,13 @@ static void imprimirCaptura(const core::RegistroLectura& r, core::ResultadoGuard
     const std::string t = r.tiene(core::BANDERA_TIEMPO_SNTP) ? core::formatearISO8601(r.capturadoEpoch)
                                                              : std::string("-");
     Serial.printf("[CAP] boot=%lu seq=%lu up=%lu t=%s tq=%s ds=%s ds_f=%s sht=%s hr=%s sht_f=%s "
-                  "door=%s door_s=%u sim=%d g=%s q=%lu ocup=%u heap=%lu\n",
+                  "door=%s door_s=%u sim=%d g=%s q=%lu ocup=%u heap=%lu tg_ms=%lu\n",
                   (unsigned long)r.bootId, (unsigned long)r.seqNo, (unsigned long)r.uptimeS, t.c_str(),
                   r.tiene(core::BANDERA_TIEMPO_SNTP) ? "sntp" : "nosync", ds, dsF ? dsF : "-", sht,
                   hr, shF ? shF : "-", puerta, (unsigned)r.puertaAbiertaS,
                   r.tiene(core::BANDERA_SIMULADO) ? 1 : 0, textoGuardado(g),
                   (unsigned long)buffer.pendientes(), (unsigned)buffer.ocupacionPct(),
-                  (unsigned long)ESP.getFreeHeap());
+                  (unsigned long)ESP.getFreeHeap(), (unsigned long)g_tiempoGuardado.ultimoMs);
 }
 
 #if MODO_DEMO
@@ -344,12 +348,16 @@ static void taskCaptura(void*) {
     const TickType_t paso = pdMS_TO_TICKS(MC38_POLL_MS);
 
     for (;;) {
+        const int64_t inicioUs = esp_timer_get_time();  // BUF-01: antes de leer los sensores
         const core::RegistroLectura r = capturar();
         portENTER_CRITICAL(&g_muxUltima);
         g_ultimaCaptura = r;
         g_hayUltimaCaptura = true;
         portEXIT_CRITICAL(&g_muxUltima);
         const core::ResultadoGuardado g = buffer.guardar(r);
+        // guardar() vuelve con el archivo cerrado: la lectura ya está confirmada en flash.
+        g_tiempoGuardado.registrar((uint32_t)((esp_timer_get_time() - inicioUs) / 1000),
+                                   g == core::ResultadoGuardado::Guardado);
         if (g == core::ResultadoGuardado::Guardado) g_capturoLectura = true;  // IOT-004
         if (g != core::ResultadoGuardado::Guardado) {
             LOG_E("Captura", "Lectura seq=%lu NO almacenada (%s): contada como perdida.",
@@ -414,6 +422,13 @@ static void imprimirEstado() {
     Serial.printf("perdidas: total=%lu episodio=%lu abierto=%d | heap=%lu (min %lu)\n",
                   (unsigned long)p.total, (unsigned long)p.episodio, p.episodioAbierto ? 1 : 0,
                   (unsigned long)ESP.getFreeHeap(), (unsigned long)ESP.getMinFreeHeap());
+    const core::TiempoGuardado& t = g_tiempoGuardado;
+    Serial.printf("guardado_local: n=%lu media=%lums min=%lums max=%lums sobre_5s=%lu fallidas=%lu | "
+                  "<1s=%lu 1-2s=%lu 2-5s=%lu >5s=%lu\n",
+                  (unsigned long)t.n, (unsigned long)t.mediaMs(), (unsigned long)(t.n ? t.minimoMs : 0),
+                  (unsigned long)t.maximoMs, (unsigned long)t.sobreLimite, (unsigned long)t.fallidas,
+                  (unsigned long)t.tramos[0], (unsigned long)t.tramos[1], (unsigned long)t.tramos[2],
+                  (unsigned long)t.tramos[3]);
 }
 
 static void imprimirRssi() {
