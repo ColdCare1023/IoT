@@ -62,7 +62,10 @@ void MQTTManager::configurar(const String& host, const String& deviceId, const S
     // degradar. La garantía que depende de nosotros es autenticar al
     // servidor: CA + verificación del nombre (el host viaja en el SNI).
     _tls.setHandshakeTimeout(TLS_HANDSHAKE_TIMEOUT_MS / 1000);
-    _tls.setTimeout(TLS_HANDSHAKE_TIMEOUT_MS / 1000);
+    // Plazo de la conexión TCP (y de lectura/escritura del socket) del cliente
+    // TLS. `setTimeout()` NO sirve para esto: es el de Stream, en milisegundos,
+    // y la conexión no lo usa; quedaba el valor por defecto de 30 s (ver config.h).
+    _tls.setConnectionTimeout(TCP_CONNECT_TIMEOUT_MS);
     _caCargada = _cargarCA();
     if (!_caCargada) LOG_E("MQTT", "Sin CA valida: NO se conectara (las lecturas siguen en LittleFS).");
     if (!_aprovisionado) LOG_E("MQTT", "Sin host o token MQTT: nodo no aprovisionado.");
