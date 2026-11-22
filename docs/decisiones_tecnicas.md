@@ -89,11 +89,14 @@ Cada decisión indica el requisito que la motiva y lo que se sacrifica.
 - Captura (prioridad 3) y red (2) en el núcleo 1; la pila Wi-Fi queda en el 0. La captura preempta el
   handshake TLS y **nunca** espera a la red: el mutex del buffer solo se toma por operación de cola y se
   suelta durante el PUBACK + acuse (verificado por `test_el_cerrojo_no_se_sostiene_durante_el_envio`).
-- Watchdog = 2 × (TCP 5 s + TLS 10 s + CONNACK 5 s) = 40 s ≤ keep-alive 60 s (`static_assert`).
-  Hasta el 21/11/2026 la cuenta omitía la conexión TCP: `setTimeout()` del cliente TLS es el de
-  `Stream` (ms) y no la gobierna, así que valía 30 s por defecto. Con un `mqtt_host` inalcanzable
-  (la laptop cambió de IP) `connect()` bloqueaba los 30 s del watchdog y el nodo se reiniciaba en
-  bucle (`reset=TASK_WDT` cada ~40 s), con la consola casi muda. Ahora `setConnectionTimeout(5 s)`.
+- Watchdog = peor `connect()` (DNS 21 s + TCP 10 s + TLS 10 s + una lectura de 10 s + CONNACK 5 s =
+  56 s) + 4 s = 60 s ≤ keep-alive 60 s (`static_assert`; cálculo y fuentes en `core/PlazosConexion.h`,
+  ver ADR-19). Antes era 2 × (TLS 10 s + CONNACK 5 s) = 30 s y no cubría DNS ni TCP (H1 del banco).
+- Los 10 s de TCP y de cada lectura del socket solo valen si se aplican con
+  `setConnectionTimeout()`: `NetworkClient` tiene su propio `_timeout` (30 s por defecto), distinto
+  del de `Stream` que fija `setTimeout()`. El 21/11/2026, con un `mqtt_host` inalcanzable (la laptop
+  cambió de IP), el nodo se reiniciaba en bucle (`reset=TASK_WDT` cada ~40 s, consola casi muda);
+  con `setConnectionTimeout()` pasó 598 s sin reinicios (v1.2.1). Desde v1.2.3 se fijan los dos.
 
 ## ADR-10 · El puerto y el esquema MQTT no son configurables (HU-14)
 
@@ -333,4 +336,55 @@ Cada decisión indica el requisito que la motiva y lo que se sacrifica.
     `registros`).
   - Mientras dura el ensayo, `ESP32_FARMACIA_01` no publica y el backend abre «Sin datos». Es esperado: se
     anota en la evidencia con la hora de inicio y de fin.
+
+## ADR-19 · H1: plazos con unidad, watchdog que cubre el intento y diagnóstico persistente (HU-08, HU-06, HU-09)
+
+- **Defecto.** `MQTTManager::configurar()` llamaba a `_tls.setTimeout(TLS_HANDSHAKE_TIMEOUT_MS / 1000)`.
+  En Arduino-ESP32 3.x `Stream::setTimeout()` va en **milisegundos**: el `connect()` TCP y cada lectura o
+  escritura del socket tenían 10 ms. Con el broker fuera de la red local los intentos fallaban al
+  instante o quedaban en tramos que el watchdog (30 s) no cubría, y el nodo reiniciaba en bucle por
+  TASK_WDT; el estado de diagnóstico vivía en RAM y se perdía en cada reinicio.
+- **Firmas verificadas en el paquete fijado** (framework-arduinoespressif32 3.3.12):
+  `Stream::setTimeout(unsigned long)` → ms, que `NetworkClientSecure::connect()` pasa a
+  `start_ssl_client()` como plazo del `select()` del connect y como SO_RCVTIMEO/SO_SNDTIMEO;
+  `NetworkClientSecure::setHandshakeTimeout(unsigned long)` → s (lo multiplica por 1000);
+  `MQTTClient::setTimeout(int)` (256dpi/MQTT 2.5.3) → ms. `core/PlazosConexion.h` define cada plazo con la
+  unidad en el nombre (`PLAZO_CLIENTE_TLS_MS`, `PLAZO_HANDSHAKE_TLS_S`, `PLAZO_COMANDO_MQTT_MS`) y
+  `static_assert` de rango; `test_mqtt_manager_pasa_cada_plazo_en_su_unidad` revisa el código fuente de
+  `MQTTManager.cpp` y falla con la división por 1000 de antes.
+- **Watchdog.** Peor bloqueo de `MQTTClient::connect()`: DNS de lwIP (7 s por servidor × 3 servidores,
+  `DNS_MAX_RETRIES = 4`, `CONFIG_LWIP_DNS_MAX_SERVERS = 3`) + TCP 10 s + handshake 10 s + una lectura
+  bloqueada de 10 s (el bucle del handshake revisa su plazo entre llamadas a mbedTLS) + CONNACK 5 s =
+  56 s. Plazo del watchdog = 60 s, igual al keep-alive. `conectar()` alimenta el watchdog entre el CONNECT
+  y cada SUBACK.
+- **Diagnóstico persistente (HU-08 esc. 3).** `core::SeguimientoReconexion` lleva el episodio (intentos
+  fallidos de Wi-Fi y de broker, desde cuándo, reinicios en medio, etapa del último fallo) y lo guarda en
+  NVS (`reconexion`, 44 B con CRC32): al abrirlo, al cruzar el umbral, al cerrarlo, al contar un reinicio
+  y, entre medias, como mucho cada 60 s de uptime. Viaja en cada `estado_nodo` (`reconexion_*`) y, si llegó
+  al umbral o hubo reinicios, en `wifi_reconexion_prolongada` al volver la sesión.
+- **Pendiente en hardware.** Ver `docs/evidencias/H1_validacion_en_hardware_pendiente.md`.
+
+## ADR-20 · Puerta persistente, rango real de pendientes, recuperación del SHT31 y desconexión ordenada
+
+- **HU-04 / HU-35.** Los cambios de puerta iban a la cola de eventos en RAM (24 entradas compartidas): un
+  reinicio o una desconexión larga los perdía. Ahora `core::BitacoraPuerta` los guarda en
+  `/tt/puerta.bin` (reescritura entera, atómica al cerrar en LittleFS, con CRC32) antes de publicarlos;
+  solo el PUBACK los retira. Capacidad 200 (cabe en un bloque de 4 KB); llena, conserva los existentes y
+  cuenta el descarte (`estado_nodo.puerta_descartados`), como el buffer de lecturas. El evento `puerta`
+  lleva el `boot_id` y el `uptime_s` del arranque en que ocurrió el cambio: `occurred_at` es la hora del
+  cambio (null si ese arranque no tuvo SNTP).
+- **HU-48 esc. 1.** `estado_nodo` publica `pendientes_desde` y `pendientes_hasta` (captured_at del
+  pendiente más antiguo y del más nuevo, misma regla que la telemetría; null sin hora honesta). El
+  backend ya los acepta y deja de estimar el rango.
+- **HU-02.** Tras 3 mediciones seguidas sin comunicación (sin ACK, timeout o CRC en T y HR) el driver
+  libera el bus I²C (hasta 9 pulsos de SCL y STOP, UM10204 §3.1.16) y reinicia el SHT31 (`begin()`).
+  `estado_nodo.sht31_recuperaciones` cuenta las veces.
+- **HU-13 esc. 2.** Antes de un DISCONNECT voluntario sin evento propio (rotación de token, prueba del
+  relevo, reversión OTA) el nodo publica `desconexion_ordenada` con `motivo`. El backend debe admitir el
+  tipo en `contrato_v1.EventoV1`; mientras no lo haga lo descarta con un aviso en su log, sin efecto.
+  `-DPUBLICAR_DESCONEXION_ORDENADA=0` lo apaga. El reinicio por consola (`reinicio_manual`) y la
+  instalación OTA (`ota_instalada`) ya avisaban antes de desconectar.
+- **Buffer MQTT.** `MQTT_BUFFER_BYTES` pasa de 1024 a 1536 B: el `estado_nodo` de peor caso con
+  `device_id` de 50 caracteres ocupa ~1,2 KB (prueba `test_estado_nodo_peor_caso_cabe_en_backend_y_en_mqtt`).
+  Cuesta 1 KB más de heap (dos buffers).
 

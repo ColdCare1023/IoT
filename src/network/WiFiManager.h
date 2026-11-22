@@ -13,10 +13,11 @@
  * Corre en la tarea de red: una asociación que tarda 15 s NO frena la
  * captura, que vive en la otra tarea y sigue guardando en LittleFS.
  *
- * Diagnóstico (HU-08 esc. 3): tras WIFI_UMBRAL_DIAGNOSTICO_INTENTOS fallos
- * seguidos se marca la señal de diagnóstico (credenciales inválidas o AP
- * ausente). Solo puede publicarse al volver la red: se reporta entonces con
- * cuántos intentos y cuánto duró el episodio.
+ * Diagnóstico (HU-08 esc. 3): cada asociación fallida suma en
+ * `fallosTotales()`. El episodio (intentos, desde cuándo, reinicios en medio)
+ * lo lleva `core::SeguimientoReconexion`, persistido en NVS para que un
+ * reinicio por watchdog no lo borre (system/DiagnosticoReconexion.h); se
+ * reporta al volver la sesión MQTT y en cada `estado_nodo`.
  */
 class WiFiManager {
 public:
@@ -31,14 +32,8 @@ public:
     int rssi() const;
     uint32_t intentosFallidos() const { return _backoff.intentos(); }
     uint32_t retardoActualMs() const { return _backoff.retardoMs(); }
-    bool diagnosticoActivo() const { return _diagnosticoActivo; }
-
-    struct Recuperacion {
-        uint32_t intentos = 0;
-        uint32_t duracionS = 0;
-    };
-    /// true una sola vez, al reconectar después de un episodio de diagnóstico.
-    bool consumirRecuperacion(Recuperacion& r);
+    /// Asociaciones fallidas desde el arranque (no se reinicia al conectar).
+    uint32_t fallosTotales() const { return _fallosTotales; }
 
 private:
     bool _conectar();
@@ -46,10 +41,7 @@ private:
     String _password;
     core::Backoff _backoff{WIFI_BACKOFF_BASE_MS, WIFI_BACKOFF_MAX_MS, WIFI_BACKOFF_FACTOR};
     uint32_t _ultimoIntentoMs = 0;
-    bool _diagnosticoActivo = false;
-    uint32_t _inicioDiagnosticoMs = 0;
-    bool _recuperacionPendiente = false;
-    Recuperacion _recuperacion;
+    uint32_t _fallosTotales = 0;
 };
 
 #endif  // WIFI_MANAGER_H

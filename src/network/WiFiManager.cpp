@@ -56,36 +56,17 @@ bool WiFiManager::_conectar() {
     while (WiFi.status() != WL_CONNECTED) {
         if (millis() - inicio > WIFI_TIMEOUT_ASOCIACION_MS) {
             _backoff.registrarFallo();
+            _fallosTotales++;
             LOG_E("WiFi", "Sin asociacion con '%s' (intento %lu, proximo en %lu ms).",
                   _ssid.c_str(), (unsigned long)_backoff.intentos(),
                   (unsigned long)_backoff.retardoMs());
-            if (!_diagnosticoActivo && _backoff.intentos() >= WIFI_UMBRAL_DIAGNOSTICO_INTENTOS) {
-                _diagnosticoActivo = true;
-                _inicioDiagnosticoMs = millis();
-                LOG_E("WiFi", "DIAGNOSTICO: %lu fallos seguidos. AP ausente o credenciales "
-                              "invalidas. La captura offline continua.",
-                      (unsigned long)_backoff.intentos());
-            }
             return false;
         }
         alimentarWatchdog();
         delay(500);
     }
 
-    if (_diagnosticoActivo) {
-        _recuperacion.intentos = _backoff.intentos();
-        _recuperacion.duracionS = (millis() - _inicioDiagnosticoMs) / 1000;
-        _diagnosticoActivo = false;
-        _recuperacionPendiente = true;
-    }
     _backoff.registrarExito();
     LOG_I("WiFi", "Conectado: IP %s, RSSI %d dBm.", WiFi.localIP().toString().c_str(), WiFi.RSSI());
-    return true;
-}
-
-bool WiFiManager::consumirRecuperacion(Recuperacion& r) {
-    if (!_recuperacionPendiente) return false;
-    _recuperacionPendiente = false;
-    r = _recuperacion;
     return true;
 }
