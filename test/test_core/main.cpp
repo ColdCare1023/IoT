@@ -23,6 +23,7 @@ void run_tests_ota(void);
 void run_tests_pem(void);
 void run_tests_posesion(void);
 void run_tests_llenado_banco(void);
+void run_tests_tiempo_guardado(void);
 
 int main(int, char**) {
     UNITY_BEGIN();
@@ -40,5 +41,6 @@ int main(int, char**) {
     run_tests_pem();
     run_tests_posesion();
     run_tests_llenado_banco();
+    run_tests_tiempo_guardado();
     return UNITY_END();
 }
