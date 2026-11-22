@@ -43,6 +43,9 @@ public:
     uint32_t descartarPendientes(void (*entreTandas)());
 
     uint32_t pendientes();
+    /// HU-48: pendiente más antiguo y más nuevo (ver ColaLecturas::extremosPendientes).
+    void extremosPendientes(core::RegistroLectura& primero, bool& hayPrimero, core::RegistroLectura& ultimo,
+                            bool& hayUltimo);
     uint8_t ocupacionPct();
     uint32_t capacidad();
     uint32_t cuarentenados();

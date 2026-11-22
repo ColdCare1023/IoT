@@ -1,6 +1,7 @@
 #include "SHT31Sensor.h"
 
 #include <Wire.h>
+#include <driver/gpio.h>
 
 #include "../config.h"
 #include "../system/Watchdog.h"
@@ -11,7 +12,23 @@ static const uint16_t CMD_CALEFACTOR_OFF = 0x3066;
 static const uint32_t ESPERA_MEDICION_MS = 16;  // 15,5 ms máx. a alta repetibilidad
 
 SHT31Sensor::SHT31Sensor(uint8_t direccion, int pinSda, int pinScl)
-    : _direccion(direccion), _sda(pinSda), _scl(pinScl) {}
+    : _direccion(direccion), _sda(pinSda), _scl(pinScl), _vigilante(SHT31_FALLAS_ANTES_DE_RECUPERAR) {}
+
+namespace {
+/// Pines del bus como GPIO de drenador abierto (alto = soltar la línea).
+class PinesArduino : public core::PinesBusI2C {
+public:
+    PinesArduino(int sda, int scl) : _sda(sda), _scl(scl) {}
+    void scl(bool alto) override { digitalWrite(_scl, alto ? HIGH : LOW); }
+    void sda(bool alto) override { digitalWrite(_sda, alto ? HIGH : LOW); }
+    bool leerSda() override { return digitalRead(_sda) == HIGH; }
+    void esperarMedioCiclo() override { delayMicroseconds(5); }
+
+private:
+    int _sda;
+    int _scl;
+};
+}  // namespace
 
 bool SHT31Sensor::_comando(uint16_t comando) {
     Wire.beginTransmission(_direccion);
@@ -35,7 +52,35 @@ bool SHT31Sensor::begin() {
     return ok;
 }
 
+void SHT31Sensor::_recuperarBus() {
+    // Se suelta el periférico I²C y las líneas pasan a GPIO de drenador abierto
+    // (con lectura de entrada) para generar los pulsos a mano.
+    Wire.end();
+    // Nivel alto (línea suelta) ANTES de habilitar la salida: sin esto el
+    // registro de salida podría estar en 0 y bajar SDA con SCL en alto (START).
+    gpio_set_level((gpio_num_t)_sda, 1);
+    gpio_set_level((gpio_num_t)_scl, 1);
+    pinMode(_sda, OUTPUT_OPEN_DRAIN | PULLUP);
+    pinMode(_scl, OUTPUT_OPEN_DRAIN | PULLUP);
+    PinesArduino pines(_sda, _scl);
+    const core::ResultadoLiberacionI2C r = core::liberarBusI2C(pines);
+    LOG_E("SHT31", "%lu mediciones seguidas sin comunicacion: bus liberado con %u pulso(s) de SCL "
+                   "(SDA %s) y sensor reiniciado (recuperacion #%lu).",
+          (unsigned long)SHT31_FALLAS_ANTES_DE_RECUPERAR, (unsigned)r.pulsos, r.sdaLibre ? "libre" : "AUN EN BAJO",
+          (unsigned long)_vigilante.recuperaciones());
+    begin();  // Wire.begin() + reset suave + calefactor apagado
+}
+
 core::LecturaSHT31 SHT31Sensor::leer() {
+    const core::LecturaSHT31 lectura = _medir();
+    // HU-02: un bus colgado no se arregla reintentando la medición; tras N
+    // fallas de comunicación seguidas se libera y se reinicia el sensor. Esta
+    // medición sigue saliendo como SENSOR_FAULT; la siguiente ya puede valer.
+    if (_vigilante.registrar(lectura)) _recuperarBus();
+    return lectura;
+}
+
+core::LecturaSHT31 SHT31Sensor::_medir() {
     core::LecturaSHT31 ultimo = core::falloSHT31(core::FalloSensor::SinRespuesta);
 
     for (int intento = 0; intento < SHT31_REINTENTOS; ++intento) {

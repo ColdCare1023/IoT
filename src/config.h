@@ -17,7 +17,7 @@
 #endif
 #define FW_MAYOR  1
 #define FW_MENOR  2
-#define FW_PARCHE 2
+#define FW_PARCHE 3
 
 // =========================================================================
 // Credenciales — vacías a propósito (RNF-05). Precedencia: NVS > build_flags.
@@ -81,6 +81,10 @@
 #define DS18B20_TIMEOUT_CONVERSION_MS 1000
 #define SHT31_REINTENTOS              3
 #define SHT31_TIMEOUT_I2C_MS          50
+// HU-02: tras estas mediciones seguidas sin comunicación (sin ACK, timeout o
+// CRC en T y HR) se libera el bus I²C (9 pulsos de SCL + STOP) y se reinicia
+// el SHT31 (core/BusI2C.h). Con 30 s de intervalo: un intento cada 90 s.
+#define SHT31_FALLAS_ANTES_DE_RECUPERAR 3
 #define MC38_POLL_MS                  50
 #define MC38_DEBOUNCE_MS              50
 
@@ -97,19 +101,34 @@
 #define MQTT_KEEPALIVE_S          60
 #define MQTT_COMMAND_TIMEOUT_MS   5000   // espera de CONNACK / PUBACK / SUBACK
 #define TLS_HANDSHAKE_TIMEOUT_MS  10000
-// Conexión TCP al broker (antes del handshake). Sin fijarlo, el cliente TLS usa
-// 30 s: con un mqtt_host que no responde (IP vieja en la LAN) connect() bloqueaba
-// el plazo entero del watchdog y el nodo entraba en bucle de reinicios TASK_WDT.
-#define TCP_CONNECT_TIMEOUT_MS    5000
+// Peor espera de lwIP al resolver un host cuyo DNS no responde (H1 del banco):
+// 7 s por servidor (1 + 1 + 2 + 3 s, DNS_MAX_RETRIES = 4) × 3 servidores
+// (CONFIG_LWIP_DNS_MAX_SERVERS). Derivación en core/PlazosConexion.h.
+// El plazo de la conexión TCP es core::PLAZO_CLIENTE_TLS_MS (10 s), aplicado con
+// setConnectionTimeout(): sin él, el cliente TLS usa 30 s por defecto.
+#define DNS_PEOR_BLOQUEO_MS       21000
 #define ACK_LOGICO_TIMEOUT_MS     8000   // espera del acuse del backend tras el PUBACK
 #define CERT_CA_ARCHIVO           "/certs/root_ca.pem"
-#define MQTT_BUFFER_BYTES         1024
+// Buffer de lectura y de escritura de lwmqtt (cada uno). Un PUBLISH entero
+// (cabecera + tópico + carga) debe caber: el `estado_nodo` de peor caso, con
+// device_id de 50 caracteres, ocupa ~1,2 KB desde la v1.2.1
+// (test_estado_nodo_peor_caso_cabe_en_backend_y_en_mqtt). Antes 1024.
+#define MQTT_BUFFER_BYTES         1536
 // IOT-004: plazo para que una imagen instalada por OTA demuestre que funciona
 // (captura una lectura y conecta con el broker) antes de revertirla.
 #define OTA_PLAZO_VERIFICACION_MS (15UL * 60UL * 1000UL)
 
 // Tópicos: farmacias/<device_id>/{lecturas|eventos|ack}
 #define TOPICO_PREFIJO "farmacias/"
+
+// HU-13 esc. 2: antes de un DISCONNECT voluntario (rotación de token, prueba
+// del relevo, reversión OTA) el nodo publica `desconexion_ordenada` con el
+// motivo. El backend debe admitir ese `event_type` en contrato_v1.EventoV1;
+// mientras no lo haga lo descarta con un aviso en su log, sin otro efecto.
+// -DPUBLICAR_DESCONEXION_ORDENADA=0 lo apaga.
+#ifndef PUBLICAR_DESCONEXION_ORDENADA
+  #define PUBLICAR_DESCONEXION_ORDENADA 1
+#endif
 
 // =========================================================================
 // Buffer offline (LittleFS, partición "littlefs" de 1472 KB; 1408 KB en producción)
@@ -140,6 +159,10 @@
 #define WIFI_BACKOFF_FACTOR       2
 #define WIFI_TIMEOUT_ASOCIACION_MS 15000
 #define WIFI_UMBRAL_DIAGNOSTICO_INTENTOS 5
+// HU-08 esc. 3: el episodio de reconexión (intentos, desde cuándo, reinicios)
+// se guarda en NVS al abrirlo, al cruzar el umbral y al cerrarlo; entre medias,
+// como mucho una vez por este intervalo de uptime (core/Reconexion.h).
+#define RECONEXION_INTERVALO_PERSISTENCIA_S 60
 
 // =========================================================================
 // Tiempo y diagnóstico
@@ -150,6 +173,9 @@
 #define NTP_TIMEOUT_MS 10000
 #define INTERVALO_ESTADO_MS   300000   // evento "estado_nodo" cada 5 min (HU-48, C-5)
 #define CAPACIDAD_EVENTOS_RAM 24
+// HU-04: cambios de puerta guardados en LittleFS hasta su PUBACK (/tt/puerta.bin,
+// 16 + 20 B por evento + 4 B de CRC: 200 caben en un bloque de 4 KB).
+#define CAPACIDAD_EVENTOS_PUERTA 200
 
 // =========================================================================
 // Registro por serie. `LOG_I` se puede silenciar; la línea [CAP] de cada

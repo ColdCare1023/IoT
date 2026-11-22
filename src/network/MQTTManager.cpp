@@ -6,6 +6,7 @@
 
 #include "../core/Credenciales.h"
 #include "../core/Payload.h"
+#include "../core/PlazosConexion.h"
 #include "../system/Watchdog.h"
 
 static_assert(MQTT_PORT == 8883, "HU-14: solo mqtts (TLS) en 8883; no hay fallback a 1883.");
@@ -61,11 +62,16 @@ void MQTTManager::configurar(const String& host, const String& deviceId, const S
     // TLS: mbedTLS 3 (ESP-IDF 5.5) negocia TLS 1.2; no existe 1.0/1.1 al que
     // degradar. La garantía que depende de nosotros es autenticar al
     // servidor: CA + verificación del nombre (el host viaja en el SNI).
-    _tls.setHandshakeTimeout(TLS_HANDSHAKE_TIMEOUT_MS / 1000);
-    // Plazo de la conexión TCP (y de lectura/escritura del socket) del cliente
-    // TLS. `setTimeout()` NO sirve para esto: es el de Stream, en milisegundos,
-    // y la conexión no lo usa; quedaba el valor por defecto de 30 s (ver config.h).
-    _tls.setConnectionTimeout(TCP_CONNECT_TIMEOUT_MS);
+    // H1: cada plazo en la unidad que espera su API (ver core/PlazosConexion.h).
+    // setHandshakeTimeout va en SEGUNDOS; los otros dos, en MILISEGUNDOS.
+    _tls.setHandshakeTimeout(core::PLAZO_HANDSHAKE_TLS_S);
+    // Conexión TCP y SO_RCVTIMEO/SO_SNDTIMEO del socket: los gobierna
+    // NetworkClient::_timeout, que solo cambia setConnectionTimeout(). Sin esta
+    // llamada valen 30 s y connect() puede agotar el watchdog (bucle TASK_WDT con
+    // un mqtt_host inalcanzable, verificado en el banco el 21/11/2026).
+    _tls.setConnectionTimeout(core::PLAZO_CLIENTE_TLS_MS);
+    // Stream::setTimeout: plazo de las lecturas "timed" de Stream (otro _timeout).
+    _tls.setTimeout(core::PLAZO_CLIENTE_TLS_MS);
     _caCargada = _cargarCA();
     if (!_caCargada) LOG_E("MQTT", "Sin CA valida: NO se conectara (las lecturas siguen en LittleFS).");
     if (!_aprovisionado) LOG_E("MQTT", "Sin host o token MQTT: nodo no aprovisionado.");
@@ -73,7 +79,7 @@ void MQTTManager::configurar(const String& host, const String& deviceId, const S
     _mqtt.begin(_host.c_str(), MQTT_PORT, _tls);
     _mqtt.setKeepAlive(MQTT_KEEPALIVE_S);
     _mqtt.setCleanSession(true);
-    _mqtt.setTimeout(MQTT_COMMAND_TIMEOUT_MS);
+    _mqtt.setTimeout(core::PLAZO_COMANDO_MQTT_MS);  // milisegundos
     _mqtt.setWill(_topicoEventos.c_str(), _lwt.c_str(), /*retained=*/false, MQTT_QOS);
     _mqtt.onMessage([this](String& topico, String& payload) { _alRecibir(topico, payload); });
 }
@@ -92,6 +98,7 @@ bool MQTTManager::conectar() {
     if (!_mqtt.connect(_deviceId.c_str(), _deviceId.c_str(), _token.c_str())) {
         const int rc = (int)_mqtt.returnCode();
         _reintento.registrarFallo();
+        _fallosTotales++;
         LOG_E("MQTT", "Conexion rechazada: lastError=%d returnCode=%d.", (int)_mqtt.lastError(), rc);
         if (rc == LWMQTT_BAD_USERNAME_OR_PASSWORD || rc == LWMQTT_NOT_AUTHORIZED) {
             LOG_E("MQTT", "  -> credencial invalida o revocada (HU-10/HU-44).");
@@ -101,13 +108,18 @@ bool MQTTManager::conectar() {
         return false;
     }
     _reintento.registrarExito();
+    // El CONNECT agotó su tramo; cada SUBACK puede esperar otro plazo de
+    // comando: se alimenta el watchdog entre llamadas (H1).
+    alimentarWatchdog();
     if (!_mqtt.subscribe(_topicoAck.c_str(), MQTT_QOS)) {
         LOG_E("MQTT", "No se pudo suscribir a %s: el buffer no se liberara.", _topicoAck.c_str());
     }
+    alimentarWatchdog();
     // IOT-004: órdenes de actualización (solo el backend puede publicarlas: ACL).
     if (!_mqtt.subscribe(_topicoOta.c_str(), MQTT_QOS)) {
         LOG_E("MQTT", "No se pudo suscribir a %s: no habra OTA.", _topicoOta.c_str());
     }
+    alimentarWatchdog();
     LOG_I("MQTT", "Conectado (%s, QoS %d). Acuses en %s.", certificadoCliente() ? "TLS mutuo" : "TLS",
           MQTT_QOS, _topicoAck.c_str());
     return true;

@@ -268,6 +268,13 @@ uint32_t BufferLittleFS::descartarPendientes(void (*entreTandas)()) {
     return total;
 }
 
+void BufferLittleFS::extremosPendientes(core::RegistroLectura& primero, bool& hayPrimero,
+                                        core::RegistroLectura& ultimo, bool& hayUltimo) {
+    xSemaphoreTakeRecursive(_mutex, portMAX_DELAY);
+    _cola.extremosPendientes(primero, hayPrimero, ultimo, hayUltimo);
+    xSemaphoreGiveRecursive(_mutex);
+}
+
 #define CON_MUTEX(expr)                                   \
     xSemaphoreTakeRecursive(_mutex, portMAX_DELAY);       \
     auto _valor = (expr);                                 \

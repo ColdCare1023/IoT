@@ -169,6 +169,11 @@ public:
     uint32_t descartarTanda(uint32_t ultimoId, uint32_t maxSegmentos, bool& quedan);
 
     // ── Estado para diagnóstico / HU-48 ─────────────────────────────────
+    /// HU-48 esc. 1: el pendiente más antiguo (el próximo a enviar) y el más
+    /// nuevo, leídos sin tocar la cola. Cada bandera queda en false si no hay
+    /// pendientes o si ese registro no se pudo leer o está corrupto.
+    void extremosPendientes(RegistroLectura& primero, bool& hayPrimero, RegistroLectura& ultimo,
+                            bool& hayUltimo);
     uint32_t pendientes() const;
     uint32_t segmentos() const { return (uint32_t)_segmentos.size(); }
     uint32_t capacidadRegistros() const;
@@ -191,6 +196,7 @@ private:
     };
 
     bool _hayEspacioParaSegmentoNuevo();
+    bool _leerRegistro(uint32_t idSegmento, uint32_t indice, RegistroLectura& registro);
     void _registrarPerdida(const RegistroLectura& r);
     void _cerrarEpisodioSiAbierto();
     bool _persistirCursor();
