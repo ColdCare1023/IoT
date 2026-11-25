@@ -71,9 +71,9 @@
 // =========================================================================
 // Muestreo
 // =========================================================================
-// Valor provisional: el definitivo se fija tras el piloto (HU-01 esc. 1).
+// Perfil de captura aprobado el 14/11/2026 (HU-01 esc. 1).
 // Se puede cambiar por NVS ("intervalo_s", 10..3600) sin recompilar.
-#define INTERVALO_MUESTREO_S_DEFECTO 30
+#define INTERVALO_MUESTREO_S_DEFECTO 10
 #define INTERVALO_MUESTREO_S_MIN     10
 #define INTERVALO_MUESTREO_S_MAX     3600
 
@@ -83,7 +83,7 @@
 #define SHT31_TIMEOUT_I2C_MS          50
 // HU-02: tras estas mediciones seguidas sin comunicación (sin ACK, timeout o
 // CRC en T y HR) se libera el bus I²C (9 pulsos de SCL + STOP) y se reinicia
-// el SHT31 (core/BusI2C.h). Con 30 s de intervalo: un intento cada 90 s.
+// el SHT31 (core/BusI2C.h). Con el intervalo inicial de 10 s, un intento cada 30 s.
 #define SHT31_FALLAS_ANTES_DE_RECUPERAR 3
 #define MC38_POLL_MS                  50
 #define MC38_DEBOUNCE_MS              50

@@ -30,6 +30,12 @@ inline uint32_t tandaLlenadoBanco(uint32_t porLlenar, uint32_t pendientes, uint3
     return n < libres ? n : libres;
 }
 
+/// La cola registra como pérdida el primer registro que no pudo escribir.
+/// Su identidad ya se usó; el resto de la tanda no llegó a intentarse.
+inline uint32_t ultimoSeqIntentadoBanco(uint32_t anterior, uint32_t guardados, bool falla) {
+    return anterior + guardados + (falla ? 1U : 0U);
+}
+
 /// Temperatura fija y dentro de 2-8 °C: el ensayo mide el buffer, no debe
 /// abrir alertas en el dispositivo de banco.
 constexpr int16_t TEMP_SINTETICA_CENTI = 500;

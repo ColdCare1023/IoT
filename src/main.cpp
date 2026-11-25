@@ -280,17 +280,19 @@ static void llenarBufferBanco() {
     for (uint32_t i = 0; i < tanda; ++i) lote[i] = core::registroSintetico(plantilla, g_seqNo + 1 + i, uptime, epoch);
     size_t guardados = 0;
     const core::ResultadoGuardado resultado = buffer.guardarLote(lote, tanda, guardados);
+    const uint32_t seqAnterior = g_seqNo;
+    const bool falla = resultado != core::ResultadoGuardado::Guardado;
+    g_seqNo = core::ultimoSeqIntentadoBanco(seqAnterior, guardados, falla);
     for (size_t i = 0; i < guardados; ++i) {
-        ++g_seqNo;
         --g_bancoPorLlenar;
-        if (g_seqNo % 1000 == 0) {
+        if ((seqAnterior + i + 1) % 1000 == 0) {
             Serial.printf("[BANCO] pendientes=%lu/%lu faltan=%lu\n", (unsigned long)buffer.pendientes(),
                           (unsigned long)buffer.capacidad(), (unsigned long)g_bancoPorLlenar);
         }
     }
-    if (resultado != core::ResultadoGuardado::Guardado) {
+    if (falla) {
         LOG_E("Banco", "No se pudo escribir el registro sintetico seq=%lu: llenado detenido.",
-              (unsigned long)(g_seqNo + 1));
+              (unsigned long)g_seqNo);
         g_bancoPorLlenar = 0;
         return;
     }
