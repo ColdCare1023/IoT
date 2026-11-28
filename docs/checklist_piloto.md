@@ -17,11 +17,12 @@ Cada punto deja evidencia (captura o log) en `docs/evidencias/`.
 
 ## Intervalo de captura (B-20)
 
-- [ ] Las pruebas de banco usaron `intervalo_s = 10`. Antes del piloto: `nvs borrar intervalo_s` (vuelve
-      al valor de fábrica, 30 s) y comprobar en `estado` → `intervalo_s: 30`.
+- [ ] Intervalo vigente desde el 14/11/2026: 10 s (valor de fábrica). Antes del piloto: `nvs borrar intervalo_s`
+      y comprobar en `estado` → `intervalo_s: 10`. Cualquier cambio posterior pasa por control de cambios (HU-01).
 - [ ] El backend recibe el intervalo en `estado_nodo` (`intervalo_s`) y recalcula el umbral SIN_DATOS
-      (3 × 30 s = 90 s); comprobarlo en `/api/dispositivos/estado-operativo` (`umbral_sin_datos_segundos`).
-- [ ] Las cifras de los documentos (buffer de 10,4 días, 90 s de SIN_DATOS) asumen 30 s.
+      (3 × 10 s = 30 s); comprobarlo en `/api/dispositivos/estado-operativo` (`umbral_sin_datos_segundos`).
+- [ ] Capacidad nominal del buffer: 30 000 lecturas ≈ 83 h a 10 s (estimación, no medida; la duración real
+      sale del ensayo de desconexión prolongada, HU-06 esc. 4).
 
 ## Pines (B-21, tarea T-04 de SP-01)
 
