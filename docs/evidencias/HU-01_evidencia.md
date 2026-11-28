@@ -49,4 +49,4 @@
 
 ## 6. Pendiente / fuera de alcance de esta evidencia
 - Escenario 4 (MAE y sesgo frente a referencia calibrada): pendiente del piloto.
-- El intervalo de muestreo definitivo se fija tras el piloto (hoy 30 s, ajustable por NVS).
+- Intervalo de muestreo vigente desde el 14/11/2026: 10 s (antes 30 s nominal), ajustable por NVS; cualquier cambio posterior queda sujeto a control de cambios.
