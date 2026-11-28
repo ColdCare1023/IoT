@@ -59,6 +59,20 @@
 12:47:10.585 > [MQTT] ERROR: Conexion rechazada: lastError=-3 returnCode=0.
 ```
 
-## 7. Pendiente / fuera de alcance de esta evidencia
+## 7. Certificado expirado (esc. 2, implementado el 28/11/2026)
+mbedTLS del core no comprueba fechas (`CONFIG_MBEDTLS_HAVE_TIME_DATE` desactivado). El firmware separa
+el handshake TLS del CONNECT MQTT y, entre ambos, evalúa `notBefore`/`notAfter` de la cadena del broker con
+la hora SNTP (`core::evaluarVigencia`). Si no es vigente:
+
+```text
+[MQTT] Certificado del broker vencido: conexion rechazada sin enviar credenciales (HU-09).
+```
+
+Pruebas nativas (`test/test_core/test_certificado.cpp`, `pio test -e native` en el CI): vigente, vencido,
+aún no válido, extremos inclusivos, sin hora SNTP (no decide), fecha corrupta y peor vigencia de la cadena.
+**Pendiente en hardware:** grabar el firmware y conectarlo al banco local con un certificado de broker
+vencido (`openssl x509 -days` con fechas pasadas, firmado por la CA cargada en el nodo).
+
+## 8. Pendiente / fuera de alcance de esta evidencia
 - Conexión contra **EMQX Cloud Serverless real** con su CA: pendiente (requiere host, CA y credencial del despliegue).
 - En ningún caso el nodo intentó una conexión sin TLS: el puerto 8883 es fijo (HU-14).

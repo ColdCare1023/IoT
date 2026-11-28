@@ -9,6 +9,7 @@
 
 #include "../config.h"
 #include "../core/Ack.h"
+#include "../core/Certificado.h"
 #include "../core/Ota.h"
 #include "../core/Posesion.h"
 #include "../core/Backoff.h"
@@ -95,6 +96,8 @@ public:
 private:
     bool _cargarCA();
     void _alRecibir(String& topico, String& payload);
+    /// HU-09 esc. 2: vigencia de la cadena del broker con la hora SNTP.
+    core::VigenciaCertificado _vigenciaBroker();
 
     WiFiClientSecure& _tls;
     MQTTClient _mqtt{MQTT_BUFFER_BYTES, MQTT_BUFFER_BYTES};
@@ -114,6 +117,7 @@ private:
 
     bool _caCargada = false;
     bool _aprovisionado = false;
+    bool _vigenciaPendiente = false;  // sesión abierta sin hora: revisar al llegar SNTP
     uint32_t _ultimoIntentoMs = 0;
     // Reintentos de conexión espaciados 5 s → 60 s: un broker caído o que
     // rechaza la credencial no se martillea con un handshake TLS cada 5 s.

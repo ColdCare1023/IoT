@@ -130,8 +130,16 @@ Cada decisión indica el requisito que la motiva y lo que se sacrifica.
   nativas). Los rechazos se cuentan en `estado_nodo.saltos_reloj_rechazados` y se registran en el log.
 - **Límite.** La primera sincronización de cada arranque no tiene referencia en el nodo; la contrasta el
   backend con `received_at` y con la base de las lecturas previas del mismo arranque.
-- **TLS.** El core compila mbedTLS sin `CONFIG_MBEDTLS_HAVE_TIME_DATE`: la vigencia de los certificados no
-  se comprueba con el reloj, así que una hora manipulada no altera la validación del broker.
+- **TLS.** El core compila mbedTLS sin `CONFIG_MBEDTLS_HAVE_TIME_DATE`: el handshake valida la CA y el
+  nombre del servidor, no las fechas. HU-09 esc. 2 exige rechazar el certificado expirado, así que el nodo
+  lo comprueba aparte (`core::evaluarVigencia`, pruebas nativas): tras el handshake y ANTES del CONNECT
+  (que lleva el token) revisa `notBefore`/`notAfter` de toda la cadena enviada por el broker con la hora
+  SNTP. Vencido, aún no válido o fecha corrupta → se cierra el socket sin enviar credenciales y cuenta
+  como intento fallido (backoff). Sin hora todavía, la sesión se abre con CA y nombre validados y la
+  vigencia se revisa en cuanto llega SNTP; si no es vigente, se corta (el broker publica el LWT).
+- **Riesgo aceptado.** SNTP no está autenticado: una hora falsa en la primera sincronización del arranque
+  puede hacer parecer vencido un certificado vigente. El efecto es que el nodo no conecta (las lecturas
+  siguen en LittleFS), no que acepte un broker ajeno: la CA y el nombre se validan sin depender del reloj.
 - **Salida futura.** Fuente de tiempo autenticada (NTS o la hora del backend por el canal TLS).
 
 ## ADR-13 · Firmware de producción endurecido (IOT-001)
