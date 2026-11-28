@@ -78,8 +78,9 @@ void test_los_extremos_del_periodo_son_inclusivos(void) {
 }
 
 void test_sin_hora_sntp_no_decide(void) {
-    // Antes de SNTP el ESP32 cuenta desde 1970: no se puede afirmar que venció.
-    const VigenciaCertificado v = core::evaluarVigencia(DESDE, fecha(2025, 1, 1), 0);
+    // Antes de SNTP el ESP32 cuenta desde 1970: no se puede afirmar que venció
+    // (este certificado venció el 2025-01-01).
+    const VigenciaCertificado v = core::evaluarVigencia(fecha(2024, 1, 1), fecha(2025, 1, 1), 0);
     TEST_ASSERT_TRUE(v == VigenciaCertificado::SinHora);
     TEST_ASSERT_FALSE(core::vigenciaRechaza(v));
     TEST_ASSERT_TRUE(core::evaluarVigencia(DESDE, HASTA, core::EPOCH_MINIMA_VALIDA - 1) == VigenciaCertificado::SinHora);
