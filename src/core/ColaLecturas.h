@@ -88,7 +88,7 @@ public:
 
 struct ConfigCola {
     uint32_t registrosPorSegmento = 100;  ///< 100 × 40 B = 4000 B ≈ 1 bloque de 4 KB
-    uint32_t maxSegmentos = 300;          ///< 30 000 lecturas ≈ 10,4 días a 30 s
+    uint32_t maxSegmentos = 300;          ///< 30 000 lecturas ≈ 83 h a 10 s (intervalo vigente)
     uint8_t umbralAvisoPct = 80;
     uint8_t umbralRearmePct = 70;
     uint32_t maxRegistrosCuarentena = 250;
