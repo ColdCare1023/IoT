@@ -138,7 +138,7 @@
   #define BUFFER_REGISTROS_POR_SEGMENTO 100   // 4000 B ≈ 1 bloque
 #endif
 #ifndef BUFFER_MAX_SEGMENTOS
-  #define BUFFER_MAX_SEGMENTOS 300            // 30 000 lecturas ≈ 10,4 días a 30 s (reducir solo en pruebas)
+  #define BUFFER_MAX_SEGMENTOS 300            // 30 000 lecturas ≈ 83 h a 10 s (reducir solo en pruebas)
 #endif
 #define BUFFER_UMBRAL_AVISO_PCT       80
 #define BUFFER_UMBRAL_REARME_PCT      70
