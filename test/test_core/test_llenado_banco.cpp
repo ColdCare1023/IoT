@@ -17,6 +17,15 @@ void test_la_tanda_no_pasa_de_la_capacidad(void) {
     TEST_ASSERT_EQUAL_UINT32(0, core::tandaLlenadoBanco(100, 30001, 30000, 20));
 }
 
+void test_secuencia_tras_tanda_parcial_no_reutiliza_el_registro_perdido(void) {
+    // SAT r1. El último guardado fue 29997 y el primer rechazado fue 29998.
+    const uint32_t ultima = core::ultimoSeqIntentadoBanco(29990, 7, true);
+    TEST_ASSERT_EQUAL_UINT32(29999, ultima + 1);
+    TEST_ASSERT_EQUAL_UINT32(29991, core::ultimoSeqIntentadoBanco(29990, 0, true));
+    TEST_ASSERT_EQUAL_UINT32(29997, core::ultimoSeqIntentadoBanco(29990, 7, false));
+    TEST_ASSERT_EQUAL_UINT32(29990, core::ultimoSeqIntentadoBanco(29990, 0, false));
+}
+
 void test_el_registro_sintetico_va_marcado_y_en_rango(void) {
     core::RegistroLectura real;
     real.bootId = 42;
@@ -108,6 +117,7 @@ void test_detenido_solo_tras_aplicar_la_cancelacion(void) {
 void run_tests_llenado_banco(void) {
     RUN_TEST(test_la_tanda_respeta_el_maximo_y_lo_pedido);
     RUN_TEST(test_la_tanda_no_pasa_de_la_capacidad);
+    RUN_TEST(test_secuencia_tras_tanda_parcial_no_reutiliza_el_registro_perdido);
     RUN_TEST(test_el_registro_sintetico_va_marcado_y_en_rango);
     RUN_TEST(test_sin_sntp_el_sintetico_no_inventa_la_hora);
     RUN_TEST(test_cancelar_a_mitad_de_una_tanda_deja_el_contador_en_cero);
