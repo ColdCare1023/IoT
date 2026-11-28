@@ -4,9 +4,11 @@
 
 #include "ca_embebida.h"
 
+#include "../core/Certificado.h"
 #include "../core/Credenciales.h"
 #include "../core/Payload.h"
 #include "../core/PlazosConexion.h"
+#include "../system/Reloj.h"
 #include "../system/Watchdog.h"
 
 static_assert(MQTT_PORT == 8883, "HU-14: solo mqtts (TLS) en 8883; no hay fallback a 1883.");
@@ -95,7 +97,29 @@ bool MQTTManager::conectar() {
     _ultimoIntentoMs = ahora;
 
     LOG_I("MQTT", "Conectando a %s:%d como '%s'...", _host.c_str(), MQTT_PORT, _deviceId.c_str());
-    if (!_mqtt.connect(_deviceId.c_str(), _deviceId.c_str(), _token.c_str())) {
+    // HU-09 esc. 2: primero solo TLS (CA + nombre del servidor). El CONNECT, que
+    // lleva el token, sale recién cuando la vigencia del certificado se comprobó.
+    _tls.stop();
+    if (!_tls.connect(_host.c_str(), MQTT_PORT)) {
+        _reintento.registrarFallo();
+        _fallosTotales++;
+        LOG_E("MQTT", "Conexion rechazada: TLS sin establecer.");
+        LOG_E("MQTT", "  -> TLS rechazado (CA/hostname), timeout del handshake o red caida (HU-09).");
+        return false;
+    }
+    alimentarWatchdog();
+    const core::VigenciaCertificado vigencia = _vigenciaBroker();
+    if (core::vigenciaRechaza(vigencia)) {
+        _tls.stop();
+        _reintento.registrarFallo();
+        _fallosTotales++;
+        LOG_E("MQTT", "Certificado del broker %s: conexion rechazada sin enviar credenciales (HU-09).",
+              core::nombreVigencia(vigencia));
+        return false;
+    }
+    _vigenciaPendiente = vigencia == core::VigenciaCertificado::SinHora;
+    if (_vigenciaPendiente) LOG_I("MQTT", "Sin hora SNTP: la vigencia del certificado se comprueba al llegar.");
+    if (!_mqtt.connect(_deviceId.c_str(), _deviceId.c_str(), _token.c_str(), /*skip=*/true)) {
         const int rc = (int)_mqtt.returnCode();
         _reintento.registrarFallo();
         _fallosTotales++;
@@ -103,7 +127,7 @@ bool MQTTManager::conectar() {
         if (rc == LWMQTT_BAD_USERNAME_OR_PASSWORD || rc == LWMQTT_NOT_AUTHORIZED) {
             LOG_E("MQTT", "  -> credencial invalida o revocada (HU-10/HU-44).");
         } else if (rc == 0) {
-            LOG_E("MQTT", "  -> sin CONNACK: TLS rechazado (CA/hostname) o red caida (HU-09).");
+            LOG_E("MQTT", "  -> sin CONNACK: el broker no respondio al CONNECT o la red cayo.");
         }
         return false;
     }
@@ -127,7 +151,36 @@ bool MQTTManager::conectar() {
 
 bool MQTTManager::conectado() { return _mqtt.connected(); }
 
-void MQTTManager::loop() { _mqtt.loop(); }
+void MQTTManager::loop() {
+    _mqtt.loop();
+    // HU-09 esc. 2: la sesión abierta sin hora se revisa en cuanto llega SNTP.
+    // Un certificado vencido corta el socket (el broker publica el LWT) y el
+    // próximo conectar() ya lo rechaza antes del CONNECT.
+    if (!_vigenciaPendiente || epochAhora() == 0 || !_mqtt.connected()) return;
+    _vigenciaPendiente = false;
+    const core::VigenciaCertificado vigencia = _vigenciaBroker();
+    if (!core::vigenciaRechaza(vigencia)) return;
+    LOG_E("MQTT", "Certificado del broker %s: sesion cerrada (HU-09).", core::nombreVigencia(vigencia));
+    _tls.stop();
+}
+
+core::VigenciaCertificado MQTTManager::_vigenciaBroker() {
+    // mbedTLS (sin CONFIG_MBEDTLS_HAVE_TIME_DATE) ya validó CA y nombre, no las
+    // fechas. Se revisa toda la cadena que envió el broker (hoja e intermedias).
+    const mbedtls_x509_crt* crt = _tls.getPeerCertificate();
+    if (crt == nullptr) return core::VigenciaCertificado::FechaInvalida;  // fallo cerrado
+    const uint32_t ahora = epochAhora();
+    core::VigenciaCertificado peor = core::VigenciaCertificado::Vigente;
+    for (; crt != nullptr; crt = crt->next) {
+        if (crt->version == 0) continue;  // nodo vacío de la lista
+        const core::FechaX509 desde{crt->valid_from.year, crt->valid_from.mon, crt->valid_from.day,
+                                    crt->valid_from.hour, crt->valid_from.min, crt->valid_from.sec};
+        const core::FechaX509 hasta{crt->valid_to.year, crt->valid_to.mon, crt->valid_to.day,
+                                    crt->valid_to.hour, crt->valid_to.min, crt->valid_to.sec};
+        peor = core::peorVigencia(peor, core::evaluarVigencia(desde, hasta, ahora));
+    }
+    return peor;
+}
 
 void MQTTManager::desconectarOrdenadamente() {
     if (_mqtt.connected()) _mqtt.disconnect();
