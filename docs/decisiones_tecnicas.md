@@ -10,8 +10,8 @@ Cada decisión indica el requisito que la motiva y lo que se sacrifica.
   En LittleFS cada archivo pequeño consume además metadatos propios.
 - **Decisión.** Cada lectura se guarda como registro de 40 B con CRC32, en segmentos de 100 registros
   (4000 B ≈ 1 bloque). El JSON v1.0 se genera **al publicar**, de forma determinista desde el registro.
-- **Consecuencias.** Capacidad configurada: 300 segmentos = **30 000 lecturas ≈ 10,4 días a 30 s**
-  (a validar en el piloto, HU-06 esc. 4). Un registro dañado se detecta con certeza (CRC32) y va a
+- **Consecuencias.** Capacidad configurada: 300 segmentos = **30 000 lecturas ≈ 83 h a 10 s** (intervalo vigente
+  desde el 14/11/2026; ≈ 10,4 días con el intervalo anterior de 30 s; a validar en el piloto, HU-06 esc. 4). Un registro dañado se detecta con certeza (CRC32) y va a
   cuarentena. `boot_id`, `seq_no`, `captured_at` y valores no pueden alterarse entre captura y envío.
   Costo: un cambio de contrato JSON no reescribe lo ya almacenado (se serializa con el formato vigente;
   `firmware_version` sí es la de captura porque va dentro del registro).
